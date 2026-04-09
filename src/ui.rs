@@ -27,15 +27,44 @@ const TICK_RATE: Duration = Duration::from_millis(500);
 const FLASH_DURATION: Duration = Duration::from_secs(3);
 const SYNC_RATE: Duration = Duration::from_secs(20);
 
+// ── Menu ─────────────────────────────────────────────────────────────────────
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MenuTab {
+    Home,
+    Games,
+    Account,
+    Team,
+    Settings,
+}
+
+impl MenuTab {
+    fn label(self) -> &'static str {
+        match self {
+            MenuTab::Home => "Home",
+            MenuTab::Games => "Games",
+            MenuTab::Account => "Account",
+            MenuTab::Team => "Team",
+            MenuTab::Settings => "Settings",
+        }
+    }
+}
+
+const MENU_ITEMS: &[MenuTab] = &[
+    MenuTab::Home,
+    MenuTab::Games,
+    MenuTab::Account,
+    MenuTab::Team,
+    MenuTab::Settings,
+];
+
+// ── App state ────────────────────────────────────────────────────────────────
+
 enum AppState {
     /// Shown at launch when a monster exists but has no cloud account.
-    StartupChoice {
-        state: SaveFile,
-    },
+    StartupChoice { state: SaveFile },
     /// First launch — no monster yet.
-    Onboarding {
-        name_input: String,
-    },
+    Onboarding { name_input: String },
     /// GitHub device flow in progress.
     LoginFlow {
         state: SaveFile,
@@ -46,6 +75,7 @@ enum AppState {
         state: SaveFile,
         flash: Option<Flash>,
         last_sync_attempt: Instant,
+        selected_tab: MenuTab,
     },
     Quit,
 }
@@ -62,6 +92,8 @@ enum FlashKind {
     Error,
     Info,
 }
+
+// ── Entry point ──────────────────────────────────────────────────────────────
 
 pub fn run() -> io::Result<()> {
     enable_raw_mode()?;
@@ -130,14 +162,17 @@ fn initial_state() -> io::Result<AppState> {
                         created_at: Instant::now(),
                     }),
                     last_sync_attempt: Instant::now() - SYNC_RATE,
+                    selected_tab: MenuTab::Home,
                 })
             }
         }
     }
 }
 
+// ── Tick ─────────────────────────────────────────────────────────────────────
+
 fn tick(app: &mut AppState) -> io::Result<()> {
-    // Check if a background login poll has resolved.
+    // Resolve a completed login flow.
     let login_result = if let AppState::LoginFlow { result_rx, .. } = app {
         match result_rx.try_recv() {
             Ok(result) => Some(result),
@@ -165,6 +200,7 @@ fn tick(app: &mut AppState) -> io::Result<()> {
                             created_at: Instant::now(),
                         }),
                         last_sync_attempt: Instant::now() - SYNC_RATE,
+                        selected_tab: MenuTab::Home,
                     };
                 }
                 Err(e) => {
@@ -177,6 +213,7 @@ fn tick(app: &mut AppState) -> io::Result<()> {
                             created_at: Instant::now(),
                         }),
                         last_sync_attempt: Instant::now() - SYNC_RATE,
+                        selected_tab: MenuTab::Home,
                     };
                 }
             }
@@ -188,6 +225,7 @@ fn tick(app: &mut AppState) -> io::Result<()> {
         state,
         flash,
         last_sync_attempt,
+        ..
     } = app
     {
         let xp_gained = xp::drain_and_apply(&mut state.monster).unwrap_or(0);
@@ -220,6 +258,8 @@ fn tick(app: &mut AppState) -> io::Result<()> {
     }
     Ok(())
 }
+
+// ── Input ─────────────────────────────────────────────────────────────────────
 
 fn persist_and_quit(app: &mut AppState) {
     let to_save: Option<SaveFile> = match app {
@@ -263,6 +303,7 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                                 created_at: Instant::now(),
                             }),
                             last_sync_attempt: Instant::now() - SYNC_RATE,
+                            selected_tab: MenuTab::Home,
                         };
                     }
                 }
@@ -273,11 +314,10 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                     state: state_owned,
                     flash: None,
                     last_sync_attempt: Instant::now() - SYNC_RATE,
+                    selected_tab: MenuTab::Home,
                 };
             }
-            KeyCode::Esc | KeyCode::Char('q') => {
-                persist_and_quit(app);
-            }
+            KeyCode::Esc | KeyCode::Char('q') => persist_and_quit(app),
             _ => {}
         },
 
@@ -292,6 +332,7 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                         created_at: Instant::now(),
                     }),
                     last_sync_attempt: Instant::now() - SYNC_RATE,
+                    selected_tab: MenuTab::Home,
                 };
             }
             _ => {}
@@ -320,9 +361,31 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
             state,
             flash,
             last_sync_attempt,
+            selected_tab,
         } => match code {
             KeyCode::Char('q') | KeyCode::Esc => persist_and_quit(app),
-            KeyCode::Char('f') => {
+
+            KeyCode::Up => {
+                let idx = MENU_ITEMS
+                    .iter()
+                    .position(|&t| t == *selected_tab)
+                    .unwrap_or(0);
+                if idx > 0 {
+                    *selected_tab = MENU_ITEMS[idx - 1];
+                }
+            }
+            KeyCode::Down => {
+                let idx = MENU_ITEMS
+                    .iter()
+                    .position(|&t| t == *selected_tab)
+                    .unwrap_or(0);
+                if idx + 1 < MENU_ITEMS.len() {
+                    *selected_tab = MENU_ITEMS[idx + 1];
+                }
+            }
+
+            // Monster actions — only active on the Home tab.
+            KeyCode::Char('f') if *selected_tab == MenuTab::Home => {
                 let result = actions::feed(&mut state.monster);
                 if result.is_ok() {
                     save::mark_dirty(state);
@@ -331,7 +394,7 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                 maybe_sync(state, flash, last_sync_attempt, true);
                 save::save_state(state).ok();
             }
-            KeyCode::Char('p') => {
+            KeyCode::Char('p') if *selected_tab == MenuTab::Home => {
                 let result = actions::play(&mut state.monster);
                 if result.is_ok() {
                     save::mark_dirty(state);
@@ -340,7 +403,7 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                 maybe_sync(state, flash, last_sync_attempt, true);
                 save::save_state(state).ok();
             }
-            KeyCode::Char('r') => {
+            KeyCode::Char('r') if *selected_tab == MenuTab::Home => {
                 let result = actions::rest(&mut state.monster);
                 if result.is_ok() {
                     save::mark_dirty(state);
@@ -420,8 +483,6 @@ fn should_replace_flash(flash: &Option<Flash>) -> bool {
     }
 }
 
-/// Spawn a thread that polls the GitHub device flow until it resolves,
-/// then sends the result (account or error) through `tx`.
 fn spawn_login_poller(
     login_id: String,
     interval_seconds: u64,
@@ -444,9 +505,8 @@ fn spawn_login_poller(
                                 let _ = tx.send(Ok(account));
                             }
                             None => {
-                                let _ = tx.send(Err(
-                                    "login completed without account data".to_string(),
-                                ));
+                                let _ =
+                                    tx.send(Err("login completed without account data".into()));
                             }
                         }
                         return;
@@ -454,7 +514,7 @@ fn spawn_login_poller(
                     PollLoginStatus::Expired | PollLoginStatus::Denied => {
                         let _ = tx.send(Err(resp
                             .message
-                            .unwrap_or_else(|| "login was not approved".to_string())));
+                            .unwrap_or_else(|| "login was not approved".into())));
                         return;
                     }
                 },
@@ -467,7 +527,7 @@ fn spawn_login_poller(
     });
 }
 
-// ── Drawing ──────────────────────────────────────────────────────────────────
+// ── Drawing ───────────────────────────────────────────────────────────────────
 
 fn draw(f: &mut ratatui::Frame, app: &AppState) {
     let online = if let AppState::Running { state, .. } = app {
@@ -489,7 +549,6 @@ fn draw(f: &mut ratatui::Frame, app: &AppState) {
                 status_label,
                 Style::default().fg(status_color),
             )),
-            // default: top-left
         )
         .title(
             Title::from(Span::styled(
@@ -509,10 +568,377 @@ fn draw(f: &mut ratatui::Frame, app: &AppState) {
         AppState::StartupChoice { state } => draw_startup_choice(f, inner, state),
         AppState::Onboarding { name_input } => draw_onboarding(f, inner, name_input),
         AppState::LoginFlow { login, .. } => draw_login_flow(f, inner, login),
-        AppState::Running { state, flash, .. } => draw_running(f, inner, state, flash),
+        AppState::Running {
+            state,
+            flash,
+            selected_tab,
+            ..
+        } => draw_running(f, inner, state, flash, *selected_tab),
         AppState::Quit => {}
     }
 }
+
+// ── Running layout ────────────────────────────────────────────────────────────
+
+fn draw_running(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    state: &SaveFile,
+    flash: &Option<Flash>,
+    selected_tab: MenuTab,
+) {
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Ratio(1, 3), Constraint::Ratio(2, 3)])
+        .split(area);
+
+    draw_sidebar(f, cols[0], selected_tab, state);
+    draw_content(f, cols[1], state, flash, selected_tab);
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+
+fn draw_sidebar(f: &mut ratatui::Frame, area: Rect, selected: MenuTab, state: &SaveFile) {
+    // Right border separates sidebar from content.
+    let block = Block::default()
+        .borders(Borders::RIGHT)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(3), // monster mini-header
+            Constraint::Length(1), // divider
+            Constraint::Min(0),    // menu items
+            Constraint::Length(1), // nav hint
+        ])
+        .split(inner);
+
+    // ── Monster mini-header
+    let header = vec![
+        Line::from(Span::styled(
+            state.monster.name.clone(),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(vec![
+            Span::styled(
+                format!("lv.{}", state.monster.level),
+                Style::default().fg(Color::Yellow),
+            ),
+            Span::styled("  ·  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                state.monster.stage.label(),
+                Style::default().fg(Color::Blue),
+            ),
+        ]),
+    ];
+    f.render_widget(Paragraph::new(header), rows[0]);
+
+    // ── Divider
+    let divider_width = rows[1].width as usize;
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            "─".repeat(divider_width),
+            Style::default().fg(Color::DarkGray),
+        )),
+        rows[1],
+    );
+
+    // ── Menu items
+    let mut lines: Vec<Line> = vec![Line::from("")];
+    for &tab in MENU_ITEMS {
+        if tab == selected {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    " ▶  ",
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    tab.label(),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]));
+        } else {
+            lines.push(Line::from(vec![
+                Span::raw("    "),
+                Span::styled(tab.label(), Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+        lines.push(Line::from(""));
+    }
+    f.render_widget(Paragraph::new(lines), rows[2]);
+
+    // ── Nav hint
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            " ↑↓ navigate",
+            Style::default().fg(Color::DarkGray),
+        )),
+        rows[3],
+    );
+}
+
+// ── Content area ──────────────────────────────────────────────────────────────
+
+fn draw_content(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    state: &SaveFile,
+    flash: &Option<Flash>,
+    selected_tab: MenuTab,
+) {
+    match selected_tab {
+        MenuTab::Home => draw_home(f, area, state, flash),
+        tab => draw_coming_soon(f, area, tab),
+    }
+}
+
+fn draw_home(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    state: &SaveFile,
+    flash: &Option<Flash>,
+) {
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([Constraint::Min(0), Constraint::Length(2)])
+        .split(area);
+
+    draw_monster_panel(f, rows[0], &state.monster, flash);
+    draw_stats_panel(f, rows[0], &state.monster);
+    draw_footer(f, rows[1], state);
+}
+
+fn draw_coming_soon(f: &mut ratatui::Frame, area: Rect, tab: MenuTab) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(3),
+            Constraint::Min(0),
+        ])
+        .split(area);
+
+    let lines = vec![
+        Line::from(Span::styled(
+            tab.label(),
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Coming soon…",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        )),
+    ];
+
+    f.render_widget(
+        Paragraph::new(lines).alignment(Alignment::Center),
+        chunks[1],
+    );
+}
+
+// ── Monster panel (home) ──────────────────────────────────────────────────────
+
+fn draw_monster_panel(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    monster: &Monster,
+    flash: &Option<Flash>,
+) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // name / level / stage
+            Constraint::Length(1), // spacer
+            Constraint::Length(5), // ascii art
+            Constraint::Length(1), // spacer
+            Constraint::Length(1), // xp gauge
+            Constraint::Length(1), // spacer
+            Constraint::Length(1), // personality
+            Constraint::Length(1), // flash
+            Constraint::Min(0),
+        ])
+        .split(area);
+
+    let header = Line::from(vec![
+        Span::styled(
+            monster.name.clone(),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("  ·  ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!("lv.{}", monster.level),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("  ·  ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            monster.stage.label(),
+            Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
+    f.render_widget(
+        Paragraph::new(header).alignment(Alignment::Center),
+        chunks[0],
+    );
+
+    let art: Vec<Line> = display::ascii_art_big(monster)
+        .into_iter()
+        .map(|l| {
+            Line::from(Span::styled(
+                l,
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ))
+        })
+        .collect();
+    f.render_widget(
+        Paragraph::new(art).alignment(Alignment::Center),
+        chunks[2],
+    );
+
+    let xp_area = center_rect(chunks[4], 55);
+    render_xp_gauge(f, xp_area, monster);
+
+    let personality = display::personality_text(monster);
+    let p_color = match display::classify_mood(monster) {
+        MoodState::Tired => Color::DarkGray,
+        MoodState::Hungry => Color::Yellow,
+        MoodState::Sad => Color::Red,
+        MoodState::Proud => Color::Green,
+        MoodState::Fine => Color::Cyan,
+    };
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            personality,
+            Style::default().fg(p_color).add_modifier(Modifier::ITALIC),
+        ))
+        .alignment(Alignment::Center),
+        chunks[6],
+    );
+
+    if let Some(flash) = flash {
+        if flash.created_at.elapsed() < FLASH_DURATION {
+            let color = match flash.kind {
+                FlashKind::Success => Color::Green,
+                FlashKind::Error => Color::Red,
+                FlashKind::Info => Color::Cyan,
+            };
+            f.render_widget(
+                Paragraph::new(Span::styled(
+                    flash.message.clone(),
+                    Style::default().fg(color).add_modifier(Modifier::BOLD),
+                ))
+                .alignment(Alignment::Center),
+                chunks[7],
+            );
+        }
+    }
+}
+
+fn draw_stats_panel(f: &mut ratatui::Frame, area: Rect, monster: &Monster) {
+    const PANEL_W: u16 = 22;
+    const PANEL_H: u16 = 5;
+
+    if area.width < PANEL_W || area.height < PANEL_H {
+        return;
+    }
+
+    let rect = Rect {
+        x: area.x + area.width - PANEL_W,
+        y: area.y,
+        width: PANEL_W,
+        height: PANEL_H,
+    };
+
+    f.render_widget(Clear, rect);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Stats ")
+        .title_style(Style::default().fg(Color::DarkGray))
+        .border_style(Style::default().fg(Color::DarkGray));
+    let inner = block.inner(rect);
+    f.render_widget(block, rect);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    f.render_widget(Paragraph::new(mini_bar("Faim   ", monster.hunger)), rows[0]);
+    f.render_widget(Paragraph::new(mini_bar("Énergie", monster.energy)), rows[1]);
+    f.render_widget(Paragraph::new(mini_bar("Moral  ", monster.mood)), rows[2]);
+}
+
+fn draw_footer(f: &mut ratatui::Frame, area: Rect, state: &SaveFile) {
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Length(1)])
+        .split(area);
+
+    let keys = Line::from(vec![
+        Span::styled(" f ", Style::default().bg(Color::DarkGray).fg(Color::Green)),
+        Span::raw(" feed   "),
+        Span::styled(" p ", Style::default().bg(Color::DarkGray).fg(Color::Green)),
+        Span::raw(" play   "),
+        Span::styled(" r ", Style::default().bg(Color::DarkGray).fg(Color::Green)),
+        Span::raw(" rest   "),
+        Span::styled(" q ", Style::default().bg(Color::DarkGray).fg(Color::Red)),
+        Span::raw(" quit"),
+    ]);
+    f.render_widget(Paragraph::new(keys).alignment(Alignment::Center), rows[0]);
+
+    let cloud_line = if let Some(account) = &state.cloud.account {
+        let suffix = if state.cloud.sync_dirty {
+            "sync pending"
+        } else {
+            "cloud synced"
+        };
+        Line::from(vec![
+            Span::styled("☁ ", Style::default().fg(Color::Cyan)),
+            Span::styled(
+                format!("@{} · {}", account.username, suffix),
+                Style::default().fg(Color::DarkGray),
+            ),
+        ])
+    } else {
+        Line::from(Span::styled(
+            "Offline — run `devimon login` to join the leaderboard",
+            Style::default().fg(Color::DarkGray),
+        ))
+    };
+    f.render_widget(
+        Paragraph::new(cloud_line).alignment(Alignment::Center),
+        rows[1],
+    );
+}
+
+// ── Full-screen modals ────────────────────────────────────────────────────────
 
 fn draw_startup_choice(f: &mut ratatui::Frame, area: Rect, state: &SaveFile) {
     let chunks = Layout::default()
@@ -540,10 +966,7 @@ fn draw_startup_choice(f: &mut ratatui::Frame, area: Rect, state: &SaveFile) {
         Line::from(""),
         Line::from(vec![
             Span::styled(" l ", Style::default().bg(Color::DarkGray).fg(Color::Cyan)),
-            Span::styled(
-                "  Login via GitHub",
-                Style::default().fg(Color::White),
-            ),
+            Span::styled("  Login via GitHub", Style::default().fg(Color::White)),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -666,167 +1089,13 @@ fn draw_onboarding(f: &mut ratatui::Frame, area: Rect, name_input: &str) {
         )),
     ];
 
-    let p = Paragraph::new(lines).alignment(Alignment::Center);
-    f.render_widget(p, chunks[1]);
-}
-
-fn draw_running(f: &mut ratatui::Frame, area: Rect, state: &SaveFile, flash: &Option<Flash>) {
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([Constraint::Min(0), Constraint::Length(2)])
-        .split(area);
-
-    let content = rows[0];
-    let footer_area = rows[1];
-
-    draw_monster_panel(f, content, &state.monster, flash);
-    draw_stats_panel(f, content, &state.monster);
-    draw_footer(f, footer_area, state);
-}
-
-fn draw_monster_panel(
-    f: &mut ratatui::Frame,
-    area: Rect,
-    monster: &Monster,
-    flash: &Option<Flash>,
-) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(5),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Min(0),
-        ])
-        .split(area);
-
-    let header = Line::from(vec![
-        Span::styled(
-            monster.name.clone(),
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("  ·  ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            format!("lv.{}", monster.level),
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("  ·  ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            monster.stage.label(),
-            Style::default()
-                .fg(Color::Blue)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ]);
     f.render_widget(
-        Paragraph::new(header).alignment(Alignment::Center),
-        chunks[0],
+        Paragraph::new(lines).alignment(Alignment::Center),
+        chunks[1],
     );
-
-    let art = display::ascii_art_big(monster);
-    let art_lines: Vec<Line> = art
-        .into_iter()
-        .map(|l| {
-            Line::from(Span::styled(
-                l,
-                Style::default()
-                    .fg(Color::Magenta)
-                    .add_modifier(Modifier::BOLD),
-            ))
-        })
-        .collect();
-    f.render_widget(
-        Paragraph::new(art_lines).alignment(Alignment::Center),
-        chunks[2],
-    );
-
-    let xp_area = center_rect(chunks[4], 55);
-    render_xp_gauge(f, xp_area, monster);
-
-    let personality = display::personality_text(monster);
-    let p_color = match display::classify_mood(monster) {
-        MoodState::Tired => Color::DarkGray,
-        MoodState::Hungry => Color::Yellow,
-        MoodState::Sad => Color::Red,
-        MoodState::Proud => Color::Green,
-        MoodState::Fine => Color::Cyan,
-    };
-    f.render_widget(
-        Paragraph::new(Span::styled(
-            personality,
-            Style::default().fg(p_color).add_modifier(Modifier::ITALIC),
-        ))
-        .alignment(Alignment::Center),
-        chunks[6],
-    );
-
-    if let Some(flash) = flash {
-        if flash.created_at.elapsed() < FLASH_DURATION {
-            let color = match flash.kind {
-                FlashKind::Success => Color::Green,
-                FlashKind::Error => Color::Red,
-                FlashKind::Info => Color::Cyan,
-            };
-            f.render_widget(
-                Paragraph::new(Span::styled(
-                    flash.message.clone(),
-                    Style::default().fg(color).add_modifier(Modifier::BOLD),
-                ))
-                .alignment(Alignment::Center),
-                chunks[7],
-            );
-        }
-    }
 }
 
-fn draw_stats_panel(f: &mut ratatui::Frame, area: Rect, monster: &Monster) {
-    const PANEL_W: u16 = 22;
-    const PANEL_H: u16 = 5;
-
-    if area.width < PANEL_W || area.height < PANEL_H {
-        return;
-    }
-
-    let rect = Rect {
-        x: area.x + area.width - PANEL_W,
-        y: area.y,
-        width: PANEL_W,
-        height: PANEL_H,
-    };
-
-    f.render_widget(Clear, rect);
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" Stats ")
-        .title_style(Style::default().fg(Color::DarkGray))
-        .border_style(Style::default().fg(Color::DarkGray));
-    let inner = block.inner(rect);
-    f.render_widget(block, rect);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
-        .split(inner);
-
-    f.render_widget(Paragraph::new(mini_bar("Faim   ", monster.hunger)), rows[0]);
-    f.render_widget(Paragraph::new(mini_bar("Énergie", monster.energy)), rows[1]);
-    f.render_widget(Paragraph::new(mini_bar("Moral  ", monster.mood)), rows[2]);
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn mini_bar(label: &str, value: f32) -> Line<'static> {
     const BAR_W: usize = 8;
@@ -845,49 +1114,6 @@ fn mini_bar(label: &str, value: f32) -> Line<'static> {
             Style::default().fg(Color::White),
         ),
     ])
-}
-
-fn draw_footer(f: &mut ratatui::Frame, area: Rect, state: &SaveFile) {
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Length(1)])
-        .split(area);
-
-    let line = Line::from(vec![
-        Span::styled(" f ", Style::default().bg(Color::DarkGray).fg(Color::Green)),
-        Span::raw(" feed   "),
-        Span::styled(" p ", Style::default().bg(Color::DarkGray).fg(Color::Green)),
-        Span::raw(" play   "),
-        Span::styled(" r ", Style::default().bg(Color::DarkGray).fg(Color::Green)),
-        Span::raw(" rest   "),
-        Span::styled(" q ", Style::default().bg(Color::DarkGray).fg(Color::Red)),
-        Span::raw(" quit"),
-    ]);
-    f.render_widget(Paragraph::new(line).alignment(Alignment::Center), rows[0]);
-
-    let cloud_line = if let Some(account) = &state.cloud.account {
-        let suffix = if state.cloud.sync_dirty {
-            "sync pending"
-        } else {
-            "cloud synced"
-        };
-        Line::from(vec![
-            Span::styled("☁ ", Style::default().fg(Color::Cyan)),
-            Span::styled(
-                format!("@{} · {}", account.username, suffix),
-                Style::default().fg(Color::DarkGray),
-            ),
-        ])
-    } else {
-        Line::from(Span::styled(
-            "Offline only — use `devimon login` in the CLI to join the leaderboard",
-            Style::default().fg(Color::DarkGray),
-        ))
-    };
-    f.render_widget(
-        Paragraph::new(cloud_line).alignment(Alignment::Center),
-        rows[1],
-    );
 }
 
 fn center_rect(area: Rect, percent: u16) -> Rect {
