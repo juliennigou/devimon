@@ -1,5 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+fn new_monster_id() -> String {
+    Uuid::new_v4().to_string()
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Stage {
@@ -20,6 +25,8 @@ impl Stage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Monster {
+    #[serde(default = "new_monster_id")]
+    pub id: String,
     pub name: String,
     pub level: u32,
     pub xp: u32,
@@ -54,6 +61,7 @@ impl Monster {
         // the player's very first interaction with a freshly spawned monster.
         let long_ago = now - chrono::Duration::days(1);
         Self {
+            id: new_monster_id(),
             name,
             level: 1,
             xp: 0,

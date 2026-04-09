@@ -42,12 +42,24 @@ impl Default for CloudState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SaveFile {
     pub version: u32,
-    pub monster: Monster,
+
+    /// All monsters in the player's collection.
+    #[serde(default)]
+    pub monsters: Vec<Monster>,
+
+    /// ID of the currently active (levelling-up) monster.
+    #[serde(default)]
+    pub active_monster_id: String,
+
+    /// Legacy single-monster field — read on load for migration, never written.
+    #[serde(default, skip_serializing)]
+    pub monster: Option<Monster>,
+
     #[serde(default)]
     pub cloud: CloudState,
 }
 
-const SAVE_VERSION: u32 = 2;
+const SAVE_VERSION: u32 = 3;
 
 fn new_device_id() -> String {
     Uuid::new_v4().to_string()
@@ -55,13 +67,59 @@ fn new_device_id() -> String {
 
 impl SaveFile {
     pub fn new(monster: Monster) -> Self {
+        let id = monster.id.clone();
         Self {
             version: SAVE_VERSION,
-            monster,
+            monsters: vec![monster],
+            active_monster_id: id,
+            monster: None,
             cloud: CloudState::default(),
         }
     }
+
+    // ── Collection helpers ────────────────────────────────────────────────
+
+    pub fn active_monster_idx(&self) -> usize {
+        self.monsters
+            .iter()
+            .position(|m| m.id == self.active_monster_id)
+            .unwrap_or(0)
+    }
+
+    pub fn active_monster(&self) -> &Monster {
+        &self.monsters[self.active_monster_idx()]
+    }
+
+    pub fn active_monster_mut(&mut self) -> &mut Monster {
+        let idx = self.active_monster_idx();
+        &mut self.monsters[idx]
+    }
+
+    /// The monster shown on the leaderboard: highest level (total_xp as tie-breaker).
+    pub fn leaderboard_monster(&self) -> &Monster {
+        self.monsters
+            .iter()
+            .max_by_key(|m| (m.level, m.total_xp))
+            .expect("monsters list is never empty")
+    }
+
+    /// Promote a monster to main by its ID (no-op if ID not found).
+    pub fn set_active(&mut self, id: &str) {
+        if self.monsters.iter().any(|m| m.id == id) {
+            self.active_monster_id = id.to_string();
+        }
+    }
+
+    /// Returns `true` if no other monster in the collection shares `name`.
+    pub fn is_name_available(&self, name: &str) -> bool {
+        !self
+            .monsters
+            .iter()
+            .any(|m| m.name.eq_ignore_ascii_case(name))
+    }
 }
+
+// ── Persistence ───────────────────────────────────────────────────────────────
 
 pub fn devimon_dir() -> io::Result<PathBuf> {
     let base = dirs::home_dir()
@@ -77,9 +135,43 @@ pub fn save_path() -> io::Result<PathBuf> {
 
 fn normalize(mut state: SaveFile) -> SaveFile {
     state.version = SAVE_VERSION;
+
+    // ── Migrate old single-monster format ────────────────────────────────
+    if let Some(mut old) = state.monster.take() {
+        if state.monsters.is_empty() {
+            if old.id.is_empty() {
+                old.id = Uuid::new_v4().to_string();
+            }
+            state.monsters.push(old);
+        }
+    }
+
+    // ── Ensure every monster has an ID ───────────────────────────────────
+    for m in &mut state.monsters {
+        if m.id.is_empty() {
+            m.id = Uuid::new_v4().to_string();
+        }
+    }
+
+    // ── Ensure active_monster_id is valid ────────────────────────────────
+    let valid = !state.active_monster_id.is_empty()
+        && state
+            .monsters
+            .iter()
+            .any(|m| m.id == state.active_monster_id);
+    if !valid {
+        state.active_monster_id = state
+            .monsters
+            .first()
+            .map(|m| m.id.clone())
+            .unwrap_or_default();
+    }
+
+    // ── Device ID ─────────────────────────────────────────────────────────
     if state.cloud.device_id.trim().is_empty() {
         state.cloud.device_id = new_device_id();
     }
+
     state
 }
 

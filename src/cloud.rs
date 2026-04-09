@@ -172,16 +172,19 @@ pub fn sync_state(state: &mut SaveFile) -> Result<SyncResponse, String> {
         .as_ref()
         .ok_or_else(|| "not logged in — run `devimon login` first.".to_string())?;
 
-    let snapshot = MonsterSnapshot {
-        name: state.monster.name.clone(),
-        level: state.monster.level,
-        xp: state.monster.xp,
-        total_xp: state.monster.total_xp,
-        stage: state.monster.stage,
-        hunger: state.monster.hunger,
-        energy: state.monster.energy,
-        mood: state.monster.mood,
-        last_active_at: state.monster.last_active,
+    let snapshot = {
+        let m = state.leaderboard_monster();
+        MonsterSnapshot {
+            name: m.name.clone(),
+            level: m.level,
+            xp: m.xp,
+            total_xp: m.total_xp,
+            stage: m.stage,
+            hunger: m.hunger,
+            energy: m.energy,
+            mood: m.mood,
+            last_active_at: m.last_active,
+        }
     };
     let monster_id = state.cloud.monster_id.as_deref();
     let client = http_client()?;

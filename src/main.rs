@@ -90,22 +90,20 @@ fn load_state_or_err() -> Result<SaveFile, String> {
 /// Returns the full local state and the XP that was applied from the event queue.
 fn load_and_tick() -> Result<(SaveFile, u32), String> {
     let mut state = load_state_or_err()?;
-    let xp_gained = xp::drain_and_apply(&mut state.monster).map_err(|e| e.to_string())?;
+    let idx = state.active_monster_idx();
+    let xp_gained =
+        xp::drain_and_apply(&mut state.monsters[idx]).map_err(|e| e.to_string())?;
     if xp_gained > 0 {
         save::mark_dirty(&mut state);
     }
-
-    state.monster.apply_decay();
-    if let Some(new_stage) = state.monster.check_evolution() {
+    state.monsters[idx].apply_decay();
+    if let Some(new_stage) = state.monsters[idx].check_evolution() {
+        let name = state.monsters[idx].name.clone();
         println!(
             "{}",
-            format!(
-                "✨ {} a évolué — {} !",
-                state.monster.name,
-                new_stage.label()
-            )
-            .bright_magenta()
-            .bold()
+            format!("✨ {} a évolué — {} !", name, new_stage.label())
+                .bright_magenta()
+                .bold()
         );
         save::mark_dirty(&mut state);
     }
@@ -148,24 +146,41 @@ fn maybe_sync_after_local_change(state: &mut SaveFile) {
 }
 
 fn cmd_spawn(name: Option<String>) -> Result<(), String> {
-    if save::load_state().map_err(|e| e.to_string())?.is_some() {
-        return Err("a monster already exists. Delete ~/.devimon/save.json to start over.".into());
-    }
     let name = name.unwrap_or_else(|| "Devi".to_string());
-    let state = SaveFile::new(monster::Monster::spawn(name.clone()));
-    save::save_state(&state).map_err(|e| e.to_string())?;
-    println!(
-        "🥚 {} est né ! Prends-en soin.",
-        name.bright_magenta().bold()
-    );
-    display::render_status(&state.monster, 0);
+    match save::load_state().map_err(|e| e.to_string())? {
+        None => {
+            // First monster ever.
+            let state = SaveFile::new(monster::Monster::spawn(name.clone()));
+            save::save_state(&state).map_err(|e| e.to_string())?;
+            println!("🥚 {} est né ! Prends-en soin.", name.bright_magenta().bold());
+            display::render_status(state.active_monster(), 0);
+        }
+        Some(mut state) => {
+            if !state.is_name_available(&name) {
+                return Err(format!(
+                    "a monster named '{}' already exists in your collection.",
+                    name
+                ));
+            }
+            state.monsters.push(monster::Monster::spawn(name.clone()));
+            save::save_state(&state).map_err(|e| e.to_string())?;
+            println!(
+                "🥚 {} a rejoint ta collection !",
+                name.bright_magenta().bold()
+            );
+            println!(
+                "{}",
+                "Open `devimon` → Collection to set it as main.".bright_black()
+            );
+        }
+    }
     Ok(())
 }
 
 fn cmd_status() -> Result<(), String> {
     let (mut state, xp_gained) = load_and_tick()?;
     save::save_state(&state).map_err(|e| e.to_string())?;
-    display::render_status(&state.monster, xp_gained);
+    display::render_status(state.active_monster(), xp_gained);
     if let Some(account) = &state.cloud.account {
         println!(
             "  {}",
@@ -182,33 +197,33 @@ fn cmd_status() -> Result<(), String> {
 
 fn cmd_feed() -> Result<(), String> {
     let (mut state, xp_gained) = load_and_tick()?;
-    let msg = actions::feed(&mut state.monster)?;
+    let msg = actions::feed(state.active_monster_mut())?;
     save::mark_dirty(&mut state);
     save::save_state(&state).map_err(|e| e.to_string())?;
     println!("{}", msg.bright_green());
-    display::render_status(&state.monster, xp_gained);
+    display::render_status(state.active_monster(), xp_gained);
     maybe_sync_after_local_change(&mut state);
     Ok(())
 }
 
 fn cmd_play() -> Result<(), String> {
     let (mut state, xp_gained) = load_and_tick()?;
-    let msg = actions::play(&mut state.monster)?;
+    let msg = actions::play(state.active_monster_mut())?;
     save::mark_dirty(&mut state);
     save::save_state(&state).map_err(|e| e.to_string())?;
     println!("{}", msg.bright_green());
-    display::render_status(&state.monster, xp_gained);
+    display::render_status(state.active_monster(), xp_gained);
     maybe_sync_after_local_change(&mut state);
     Ok(())
 }
 
 fn cmd_rest() -> Result<(), String> {
     let (mut state, xp_gained) = load_and_tick()?;
-    let msg = actions::rest(&mut state.monster)?;
+    let msg = actions::rest(state.active_monster_mut())?;
     save::mark_dirty(&mut state);
     save::save_state(&state).map_err(|e| e.to_string())?;
     println!("{}", msg.bright_green());
-    display::render_status(&state.monster, xp_gained);
+    display::render_status(state.active_monster(), xp_gained);
     maybe_sync_after_local_change(&mut state);
     Ok(())
 }
