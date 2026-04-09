@@ -23,6 +23,8 @@ pub struct Monster {
     pub name: String,
     pub level: u32,
     pub xp: u32,
+    #[serde(default)]
+    pub total_xp: u32,
     pub stage: Stage,
 
     pub hunger: f32,
@@ -55,6 +57,7 @@ impl Monster {
             name,
             level: 1,
             xp: 0,
+            total_xp: 0,
             stage: Stage::Baby,
             hunger: 80.0,
             energy: 80.0,
@@ -80,6 +83,7 @@ impl Monster {
     /// Add XP and cascade level-ups.
     pub fn gain_xp(&mut self, amount: u32) {
         self.xp += amount;
+        self.total_xp += amount;
         while self.xp >= self.xp_to_next() {
             self.xp -= self.xp_to_next();
             self.level += 1;

@@ -1,0 +1,8 @@
+name = "devimon-api"
+main = "src/index.js"
+compatibility_date = "2026-04-09"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "devimon"
+database_id = "a34f4397-37e5-4cd0-be11-29e528d16b94"

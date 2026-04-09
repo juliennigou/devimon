@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Devimon Leaderboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="background-grid"></div>
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">Devimon Cloud</p>
+        <h1>Terminal monsters, ranked live.</h1>
+        <p class="lede">
+          Every synced Devimon rises through the same ladder. Your local pet stays
+          in the terminal. The website only shows the public race.
+        </p>
+        <div class="hero-meta">
+          <div class="meta-card">
+            <span class="meta-label">API</span>
+            <code id="api-base"></code>
+          </div>
+          <div class="meta-card">
+            <span class="meta-label">Updated</span>
+            <span id="generated-at">Waiting for first response</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="leaderboard-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Leaderboard</p>
+            <h2>Top monsters</h2>
+          </div>
+          <button id="refresh-button" class="refresh-button">Refresh</button>
+        </div>
+
+        <div id="status-banner" class="status-banner">Loading leaderboard…</div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Monster</th>
+                <th>Stage</th>
+                <th>Level</th>
+                <th>Total XP</th>
+                <th>Last Active</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboard-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>

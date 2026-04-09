@@ -98,7 +98,10 @@ pub fn bar(value: f32, label: &str) -> String {
 
     format!(
         "{:<8} {}{} {:>3.0}/100",
-        label, colored_fill, empty_str.bright_black(), value
+        label,
+        colored_fill,
+        empty_str.bright_black(),
+        value
     )
 }
 
