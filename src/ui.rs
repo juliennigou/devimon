@@ -81,6 +81,8 @@ enum AppState {
         last_sync_attempt: Instant,
         selected_tab: MenuTab,
         collection_cursor: usize,
+        /// true = ↑↓ navigate content panel; false = ↑↓ navigate sidebar
+        content_focused: bool,
     },
     Quit,
 }
@@ -169,6 +171,7 @@ fn initial_state() -> io::Result<AppState> {
                     last_sync_attempt: Instant::now() - SYNC_RATE,
                     selected_tab: MenuTab::Home,
                     collection_cursor: 0,
+                    content_focused: false,
                 })
             }
         }
@@ -207,6 +210,7 @@ fn tick(app: &mut AppState) -> io::Result<()> {
                         last_sync_attempt: Instant::now() - SYNC_RATE,
                         selected_tab: MenuTab::Home,
                         collection_cursor: 0,
+                        content_focused: false,
                     };
                 }
                 Err(e) => {
@@ -221,6 +225,7 @@ fn tick(app: &mut AppState) -> io::Result<()> {
                         last_sync_attempt: Instant::now() - SYNC_RATE,
                         selected_tab: MenuTab::Home,
                         collection_cursor: 0,
+                        content_focused: false,
                     };
                 }
             }
@@ -310,6 +315,7 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                             last_sync_attempt: Instant::now() - SYNC_RATE,
                             selected_tab: MenuTab::Home,
                             collection_cursor: 0,
+                            content_focused: false,
                         };
                     }
                 }
@@ -322,6 +328,7 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                     last_sync_attempt: Instant::now() - SYNC_RATE,
                     selected_tab: MenuTab::Home,
                     collection_cursor: 0,
+                    content_focused: false,
                 };
             }
             KeyCode::Esc | KeyCode::Char('q') => persist_and_quit(app),
@@ -341,6 +348,7 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                     last_sync_attempt: Instant::now() - SYNC_RATE,
                     selected_tab: MenuTab::Home,
                     collection_cursor: 0,
+                    content_focused: false,
                 };
             }
             _ => {}
@@ -371,12 +379,19 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
             last_sync_attempt,
             selected_tab,
             collection_cursor,
+            content_focused,
         } => match code {
-            KeyCode::Char('q') | KeyCode::Esc => persist_and_quit(app),
+            KeyCode::Char('q') | KeyCode::Esc => {
+                if *content_focused {
+                    *content_focused = false;
+                } else {
+                    persist_and_quit(app)
+                }
+            }
 
             // ── Navigation ────────────────────────────────────────────────
-            // Left/Right → switch sidebar tab
-            KeyCode::Left => {
+            // ↑↓ in sidebar mode → switch tabs
+            KeyCode::Up if !*content_focused => {
                 let idx = MENU_ITEMS
                     .iter()
                     .position(|&t| t == *selected_tab)
@@ -386,7 +401,7 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                     *collection_cursor = 0;
                 }
             }
-            KeyCode::Right => {
+            KeyCode::Down if !*content_focused => {
                 let idx = MENU_ITEMS
                     .iter()
                     .position(|&t| t == *selected_tab)
@@ -396,18 +411,26 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                     *collection_cursor = 0;
                 }
             }
-            // Up/Down → move within current tab's content list
-            KeyCode::Up if *selected_tab == MenuTab::Collection => {
+            // → enters content panel (only on tabs that have interactive content)
+            KeyCode::Right if !*content_focused && *selected_tab == MenuTab::Collection => {
+                *content_focused = true;
+            }
+            // ← exits content panel back to sidebar
+            KeyCode::Left if *content_focused => {
+                *content_focused = false;
+            }
+            // ↑↓ in content mode → navigate collection items
+            KeyCode::Up if *content_focused && *selected_tab == MenuTab::Collection => {
                 if *collection_cursor > 0 {
                     *collection_cursor -= 1;
                 }
             }
-            KeyCode::Down if *selected_tab == MenuTab::Collection => {
+            KeyCode::Down if *content_focused && *selected_tab == MenuTab::Collection => {
                 if *collection_cursor + 1 < state.monsters.len() {
                     *collection_cursor += 1;
                 }
             }
-            KeyCode::Enter if *selected_tab == MenuTab::Collection => {
+            KeyCode::Enter if *content_focused && *selected_tab == MenuTab::Collection => {
                 if let Some(monster) = state.monsters.get(*collection_cursor) {
                     let id = monster.id.clone();
                     let name = monster.name.clone();
@@ -615,8 +638,17 @@ fn draw(f: &mut ratatui::Frame, app: &AppState) {
             flash,
             selected_tab,
             collection_cursor,
+            content_focused,
             ..
-        } => draw_running(f, inner, state, flash, *selected_tab, *collection_cursor),
+        } => draw_running(
+            f,
+            inner,
+            state,
+            flash,
+            *selected_tab,
+            *collection_cursor,
+            *content_focused,
+        ),
         AppState::Quit => {}
     }
 }
@@ -630,19 +662,34 @@ fn draw_running(
     flash: &Option<Flash>,
     selected_tab: MenuTab,
     collection_cursor: usize,
+    content_focused: bool,
 ) {
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Ratio(1, 3), Constraint::Ratio(2, 3)])
         .split(area);
 
-    draw_sidebar(f, cols[0], selected_tab, state);
-    draw_content(f, cols[1], state, flash, selected_tab, collection_cursor);
+    draw_sidebar(f, cols[0], selected_tab, state, content_focused);
+    draw_content(
+        f,
+        cols[1],
+        state,
+        flash,
+        selected_tab,
+        collection_cursor,
+        content_focused,
+    );
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
-fn draw_sidebar(f: &mut ratatui::Frame, area: Rect, selected: MenuTab, state: &SaveFile) {
+fn draw_sidebar(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    selected: MenuTab,
+    state: &SaveFile,
+    content_focused: bool,
+) {
     let block = Block::default()
         .borders(Borders::RIGHT)
         .border_style(Style::default().fg(Color::DarkGray));
@@ -689,7 +736,17 @@ fn draw_sidebar(f: &mut ratatui::Frame, area: Rect, selected: MenuTab, state: &S
         rows[1],
     );
 
-    // Menu items
+    // Menu items — dim the highlight when focus is in the content panel
+    let arrow_color = if content_focused {
+        Color::DarkGray
+    } else {
+        Color::Magenta
+    };
+    let selected_text_color = if content_focused {
+        Color::DarkGray
+    } else {
+        Color::White
+    };
     let mut lines: Vec<Line> = vec![Line::from("")];
     for &tab in MENU_ITEMS {
         if tab == selected {
@@ -697,13 +754,13 @@ fn draw_sidebar(f: &mut ratatui::Frame, area: Rect, selected: MenuTab, state: &S
                 Span::styled(
                     " ▶  ",
                     Style::default()
-                        .fg(Color::Magenta)
+                        .fg(arrow_color)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     tab.label(),
                     Style::default()
-                        .fg(Color::White)
+                        .fg(selected_text_color)
                         .add_modifier(Modifier::BOLD),
                 ),
             ]));
@@ -718,11 +775,13 @@ fn draw_sidebar(f: &mut ratatui::Frame, area: Rect, selected: MenuTab, state: &S
     f.render_widget(Paragraph::new(lines), rows[2]);
 
     // Nav hint
+    let hint = if content_focused {
+        " ← back to menu"
+    } else {
+        " ↑↓ navigate"
+    };
     f.render_widget(
-        Paragraph::new(Span::styled(
-            " ↑↓ navigate",
-            Style::default().fg(Color::DarkGray),
-        )),
+        Paragraph::new(Span::styled(hint, Style::default().fg(Color::DarkGray))),
         rows[3],
     );
 }
@@ -736,10 +795,13 @@ fn draw_content(
     flash: &Option<Flash>,
     selected_tab: MenuTab,
     collection_cursor: usize,
+    content_focused: bool,
 ) {
     match selected_tab {
         MenuTab::Home => draw_home(f, area, state, flash),
-        MenuTab::Collection => draw_collection(f, area, state, collection_cursor, flash),
+        MenuTab::Collection => {
+            draw_collection(f, area, state, collection_cursor, flash, content_focused)
+        }
         tab => draw_coming_soon(f, area, tab),
     }
 }
@@ -950,6 +1012,7 @@ fn draw_collection(
     state: &SaveFile,
     cursor: usize,
     flash: &Option<Flash>,
+    content_focused: bool,
 ) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -1010,7 +1073,7 @@ fn draw_collection(
             f,
             rect,
             monster,
-            i == cursor,
+            content_focused && i == cursor,
             monster.id == state.active_monster_id,
         );
     }
@@ -1034,10 +1097,12 @@ fn draw_collection(
             return;
         }
     }
-    let hint = if n > 1 {
-        " ↑↓ select  ·  Enter set main  ·  ←→ menu"
+    let hint = if !content_focused {
+        " → enter collection  ·  ↑↓ menu"
+    } else if n > 1 {
+        " ↑↓ select  ·  Enter set main  ·  ← back"
     } else {
-        " spawn more monsters with `devimon spawn <name>`"
+        " spawn more with `devimon spawn <name>`  ·  ← back"
     };
     f.render_widget(
         Paragraph::new(Span::styled(hint, Style::default().fg(Color::DarkGray))),
