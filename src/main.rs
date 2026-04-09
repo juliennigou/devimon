@@ -91,8 +91,7 @@ fn load_state_or_err() -> Result<SaveFile, String> {
 fn load_and_tick() -> Result<(SaveFile, u32), String> {
     let mut state = load_state_or_err()?;
     let idx = state.active_monster_idx();
-    let xp_gained =
-        xp::drain_and_apply(&mut state.monsters[idx]).map_err(|e| e.to_string())?;
+    let xp_gained = xp::drain_and_apply(&mut state.monsters[idx]).map_err(|e| e.to_string())?;
     if xp_gained > 0 {
         save::mark_dirty(&mut state);
     }
@@ -152,7 +151,10 @@ fn cmd_spawn(name: Option<String>) -> Result<(), String> {
             // First monster ever.
             let state = SaveFile::new(monster::Monster::spawn(name.clone()));
             save::save_state(&state).map_err(|e| e.to_string())?;
-            println!("🥚 {} est né ! Prends-en soin.", name.bright_magenta().bold());
+            println!(
+                "🥚 {} est né ! Prends-en soin.",
+                name.bright_magenta().bold()
+            );
             display::render_status(state.active_monster(), 0);
         }
         Some(mut state) => {
@@ -425,8 +427,7 @@ fn cmd_update() -> Result<(), String> {
 
     // Write to a temp file beside the binary, then atomically rename.
     let tmp = current_exe.with_extension("update-tmp");
-    std::fs::write(&tmp, &bytes)
-        .map_err(|e| format!("failed to write update to disk: {}", e))?;
+    std::fs::write(&tmp, &bytes).map_err(|e| format!("failed to write update to disk: {}", e))?;
 
     #[cfg(unix)]
     {
@@ -440,9 +441,12 @@ fn cmd_update() -> Result<(), String> {
 
     println!(
         "{}",
-        format!("Updated to {}! Restart devimon to use the new version.", tag)
-            .bright_green()
-            .bold()
+        format!(
+            "Updated to {}! Restart devimon to use the new version.",
+            tag
+        )
+        .bright_green()
+        .bold()
     );
     Ok(())
 }

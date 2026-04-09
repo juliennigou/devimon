@@ -64,8 +64,12 @@ const MENU_ITEMS: &[MenuTab] = &[
 // ── App state ─────────────────────────────────────────────────────────────────
 
 enum AppState {
-    StartupChoice { state: SaveFile },
-    Onboarding { name_input: String },
+    StartupChoice {
+        state: SaveFile,
+    },
+    Onboarding {
+        name_input: String,
+    },
     LoginFlow {
         state: SaveFile,
         login: cloud::StartLoginResponse,
@@ -546,8 +550,7 @@ fn spawn_login_poller(
                                 let _ = tx.send(Ok(account));
                             }
                             None => {
-                                let _ =
-                                    tx.send(Err("login completed without account data".into()));
+                                let _ = tx.send(Err("login completed without account data".into()));
                             }
                         }
                         return;
@@ -814,10 +817,7 @@ fn draw_monster_panel(
             ))
         })
         .collect();
-    f.render_widget(
-        Paragraph::new(art).alignment(Alignment::Center),
-        chunks[2],
-    );
+    f.render_widget(Paragraph::new(art).alignment(Alignment::Center), chunks[2]);
 
     render_xp_gauge(f, center_rect(chunks[4], 55), monster);
 
@@ -885,9 +885,18 @@ fn draw_stats_panel(f: &mut ratatui::Frame, area: Rect, monster: &Monster) {
             Constraint::Length(1),
         ])
         .split(inner);
-    f.render_widget(Paragraph::new(mini_bar_line("Faim   ", monster.hunger)), rows[0]);
-    f.render_widget(Paragraph::new(mini_bar_line("Énergie", monster.energy)), rows[1]);
-    f.render_widget(Paragraph::new(mini_bar_line("Moral  ", monster.mood)), rows[2]);
+    f.render_widget(
+        Paragraph::new(mini_bar_line("Faim   ", monster.hunger)),
+        rows[0],
+    );
+    f.render_widget(
+        Paragraph::new(mini_bar_line("Énergie", monster.energy)),
+        rows[1],
+    );
+    f.render_widget(
+        Paragraph::new(mini_bar_line("Moral  ", monster.mood)),
+        rows[2],
+    );
 }
 
 fn draw_footer(f: &mut ratatui::Frame, area: Rect, state: &SaveFile) {
@@ -909,7 +918,11 @@ fn draw_footer(f: &mut ratatui::Frame, area: Rect, state: &SaveFile) {
     f.render_widget(Paragraph::new(keys).alignment(Alignment::Center), rows[0]);
 
     let cloud_line = if let Some(account) = &state.cloud.account {
-        let suffix = if state.cloud.sync_dirty { "sync pending" } else { "cloud synced" };
+        let suffix = if state.cloud.sync_dirty {
+            "sync pending"
+        } else {
+            "cloud synced"
+        };
         Line::from(vec![
             Span::styled("☁ ", Style::default().fg(Color::Cyan)),
             Span::styled(
@@ -1043,7 +1056,11 @@ fn draw_monster_card(
         return;
     }
 
-    let border_color = if selected { Color::Magenta } else { Color::DarkGray };
+    let border_color = if selected {
+        Color::Magenta
+    } else {
+        Color::DarkGray
+    };
 
     // ── Star badge + name in top-left title
     let star = if is_main {
@@ -1062,11 +1079,19 @@ fn draw_monster_card(
     // ── Level + stage right-aligned title
     let level_span = Span::styled(
         format!(" lv.{}", monster.level),
-        Style::default().fg(if selected { Color::Yellow } else { Color::DarkGray }),
+        Style::default().fg(if selected {
+            Color::Yellow
+        } else {
+            Color::DarkGray
+        }),
     );
     let stage_span = Span::styled(
         format!("  {}  ", monster.stage.label()),
-        Style::default().fg(if selected { Color::Blue } else { Color::DarkGray }),
+        Style::default().fg(if selected {
+            Color::Blue
+        } else {
+            Color::DarkGray
+        }),
     );
 
     let block = Block::default()
@@ -1077,10 +1102,7 @@ fn draw_monster_card(
             Span::styled(monster.name.clone(), name_style),
             Span::raw(" "),
         ])))
-        .title(
-            Title::from(Line::from(vec![level_span, stage_span]))
-                .alignment(Alignment::Right),
-        );
+        .title(Title::from(Line::from(vec![level_span, stage_span])).alignment(Alignment::Right));
 
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -1209,10 +1231,7 @@ fn draw_startup_choice(f: &mut ratatui::Frame, area: Rect, state: &SaveFile) {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" n ", Style::default().bg(Color::DarkGray).fg(Color::White)),
-                Span::styled(
-                    "  Rester hors ligne",
-                    Style::default().fg(Color::DarkGray),
-                ),
+                Span::styled("  Rester hors ligne", Style::default().fg(Color::DarkGray)),
             ]),
             Line::from(""),
             Line::from(""),
@@ -1346,10 +1365,7 @@ fn mini_bar_line(label: &str, value: f32) -> Line<'static> {
         Span::styled(label.to_string(), Style::default().fg(Color::DarkGray)),
         Span::raw(" "),
         Span::styled("█".repeat(filled), Style::default().fg(need_color(value))),
-        Span::styled(
-            "░".repeat(W - filled),
-            Style::default().fg(Color::DarkGray),
-        ),
+        Span::styled("░".repeat(W - filled), Style::default().fg(Color::DarkGray)),
         Span::styled(
             format!(" {:>3.0}", value),
             Style::default().fg(Color::White),
