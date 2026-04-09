@@ -374,8 +374,9 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
         } => match code {
             KeyCode::Char('q') | KeyCode::Esc => persist_and_quit(app),
 
-            // ── Sidebar navigation (always available) ─────────────────────
-            KeyCode::Up => {
+            // ── Navigation ────────────────────────────────────────────────
+            // Left/Right → switch sidebar tab
+            KeyCode::Left => {
                 let idx = MENU_ITEMS
                     .iter()
                     .position(|&t| t == *selected_tab)
@@ -385,7 +386,7 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                     *collection_cursor = 0;
                 }
             }
-            KeyCode::Down => {
+            KeyCode::Right => {
                 let idx = MENU_ITEMS
                     .iter()
                     .position(|&t| t == *selected_tab)
@@ -395,16 +396,15 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                     *collection_cursor = 0;
                 }
             }
-
-            // ── Collection navigation ─────────────────────────────────────
-            KeyCode::Char('j') if *selected_tab == MenuTab::Collection => {
-                if *collection_cursor + 1 < state.monsters.len() {
-                    *collection_cursor += 1;
-                }
-            }
-            KeyCode::Char('k') if *selected_tab == MenuTab::Collection => {
+            // Up/Down → move within current tab's content list
+            KeyCode::Up if *selected_tab == MenuTab::Collection => {
                 if *collection_cursor > 0 {
                     *collection_cursor -= 1;
+                }
+            }
+            KeyCode::Down if *selected_tab == MenuTab::Collection => {
+                if *collection_cursor + 1 < state.monsters.len() {
+                    *collection_cursor += 1;
                 }
             }
             KeyCode::Enter if *selected_tab == MenuTab::Collection => {
@@ -1035,7 +1035,7 @@ fn draw_collection(
         }
     }
     let hint = if n > 1 {
-        " j/k select  ·  Enter set main  ·  ↑↓ menu"
+        " ↑↓ select  ·  Enter set main  ·  ←→ menu"
     } else {
         " spawn more monsters with `devimon spawn <name>`"
     };
