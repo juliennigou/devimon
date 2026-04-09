@@ -50,6 +50,8 @@ enum Commands {
     Whoami,
     /// Upload the current monster state to the leaderboard backend
     Sync,
+    /// Update Devimon to the latest version
+    Update,
 }
 
 fn main() {
@@ -73,6 +75,7 @@ fn run(cli: Cli) -> Result<(), String> {
         Commands::Logout => cmd_logout(),
         Commands::Whoami => cmd_whoami(),
         Commands::Sync => cmd_sync(),
+        Commands::Update => cmd_update(),
     }
 }
 
@@ -316,6 +319,46 @@ fn cmd_whoami() -> Result<(), String> {
     if let Some(monster_id) = me.monster_id.or_else(|| state.cloud.monster_id.clone()) {
         println!("  Monster ID: {}", monster_id);
     }
+    Ok(())
+}
+
+fn cmd_update() -> Result<(), String> {
+    // Verify cargo is available before doing anything.
+    let cargo_check = process::Command::new("cargo")
+        .arg("--version")
+        .output()
+        .map_err(|_| {
+            "cargo not found — install Rust from https://rustup.rs/ then retry.".to_string()
+        })?;
+    if !cargo_check.status.success() {
+        return Err(
+            "cargo not found — install Rust from https://rustup.rs/ then retry.".to_string(),
+        );
+    }
+
+    println!("{}", "Updating Devimon…".bright_cyan().bold());
+    println!(
+        "{}",
+        "Running: cargo install --git https://github.com/juliennigou/devimon --locked --force"
+            .bright_black()
+    );
+
+    let status = process::Command::new("cargo")
+        .args([
+            "install",
+            "--git",
+            "https://github.com/juliennigou/devimon",
+            "--locked",
+            "--force",
+        ])
+        .status()
+        .map_err(|e| format!("failed to launch cargo: {}", e))?;
+
+    if !status.success() {
+        return Err("update failed — see cargo output above for details.".to_string());
+    }
+
+    println!("{}", "Devimon updated successfully!".bright_green().bold());
     Ok(())
 }
 

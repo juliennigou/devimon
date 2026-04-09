@@ -10,7 +10,7 @@ use std::time::Duration;
 
 const DEFAULT_API_BASE_URL: &str = "https://devimon-api.julienigou33.workers.dev";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct StartLoginResponse {
     pub login_id: String,
     pub user_code: String,

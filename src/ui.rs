@@ -1,5 +1,5 @@
 use crate::actions;
-use crate::cloud;
+use crate::cloud::{self, PollLoginStatus};
 use crate::display::{self, MoodState};
 use crate::monster::Monster;
 use crate::save::{self, SaveFile};
@@ -16,9 +16,10 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Gauge, Paragraph},
+    widgets::{Block, Borders, Clear, Gauge, Paragraph, block::Title},
 };
 use std::io::{self, Stdout};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -27,8 +28,19 @@ const FLASH_DURATION: Duration = Duration::from_secs(3);
 const SYNC_RATE: Duration = Duration::from_secs(20);
 
 enum AppState {
+    /// Shown at launch when a monster exists but has no cloud account.
+    StartupChoice {
+        state: SaveFile,
+    },
+    /// First launch — no monster yet.
     Onboarding {
         name_input: String,
+    },
+    /// GitHub device flow in progress.
+    LoginFlow {
+        state: SaveFile,
+        login: cloud::StartLoginResponse,
+        result_rx: mpsc::Receiver<Result<cloud::AccountEnvelope, String>>,
     },
     Running {
         state: SaveFile,
@@ -74,27 +86,27 @@ pub fn run() -> io::Result<()> {
 }
 
 fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> io::Result<()> {
-    let mut state = initial_state()?;
+    let mut app = initial_state()?;
     let mut last_tick = Instant::now();
 
     loop {
-        terminal.draw(|f| draw(f, &state))?;
+        terminal.draw(|f| draw(f, &app))?;
 
         let timeout = TICK_RATE.saturating_sub(last_tick.elapsed());
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    handle_key(&mut state, key.code, key.modifiers)?;
+                    handle_key(&mut app, key.code, key.modifiers)?;
                 }
             }
         }
 
         if last_tick.elapsed() >= TICK_RATE {
-            tick(&mut state)?;
+            tick(&mut app)?;
             last_tick = Instant::now();
         }
 
-        if matches!(state, AppState::Quit) {
+        if matches!(app, AppState::Quit) {
             break;
         }
     }
@@ -103,22 +115,75 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> io::Result<()> 
 
 fn initial_state() -> io::Result<AppState> {
     match save::load_state()? {
-        Some(state) => Ok(AppState::Running {
-            state,
-            flash: Some(Flash {
-                message: "Bon retour ! Ton monstre t'attendait.".to_string(),
-                kind: FlashKind::Info,
-                created_at: Instant::now(),
-            }),
-            last_sync_attempt: Instant::now() - SYNC_RATE,
-        }),
         None => Ok(AppState::Onboarding {
             name_input: String::new(),
         }),
+        Some(state) => {
+            if state.cloud.account.is_none() {
+                Ok(AppState::StartupChoice { state })
+            } else {
+                Ok(AppState::Running {
+                    state,
+                    flash: Some(Flash {
+                        message: "Bon retour ! Ton monstre t'attendait.".to_string(),
+                        kind: FlashKind::Info,
+                        created_at: Instant::now(),
+                    }),
+                    last_sync_attempt: Instant::now() - SYNC_RATE,
+                })
+            }
+        }
     }
 }
 
 fn tick(app: &mut AppState) -> io::Result<()> {
+    // Check if a background login poll has resolved.
+    let login_result = if let AppState::LoginFlow { result_rx, .. } = app {
+        match result_rx.try_recv() {
+            Ok(result) => Some(result),
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+
+    if let Some(result) = login_result {
+        if let AppState::LoginFlow { state, .. } = app {
+            match result {
+                Ok(account) => {
+                    let username = account.username.clone();
+                    state.cloud.account = Some(account.into());
+                    save::mark_dirty(state);
+                    cloud::sync_state(state).ok();
+                    save::save_state(state).ok();
+                    let new_state = state.clone();
+                    *app = AppState::Running {
+                        state: new_state,
+                        flash: Some(Flash {
+                            message: format!("Logged in as @{}!", username),
+                            kind: FlashKind::Success,
+                            created_at: Instant::now(),
+                        }),
+                        last_sync_attempt: Instant::now() - SYNC_RATE,
+                    };
+                }
+                Err(e) => {
+                    let new_state = state.clone();
+                    *app = AppState::Running {
+                        state: new_state,
+                        flash: Some(Flash {
+                            message: format!("Login failed: {}", e),
+                            kind: FlashKind::Error,
+                            created_at: Instant::now(),
+                        }),
+                        last_sync_attempt: Instant::now() - SYNC_RATE,
+                    };
+                }
+            }
+        }
+        return Ok(());
+    }
+
     if let AppState::Running {
         state,
         flash,
@@ -157,7 +222,13 @@ fn tick(app: &mut AppState) -> io::Result<()> {
 }
 
 fn persist_and_quit(app: &mut AppState) {
-    if let AppState::Running { state, .. } = app {
+    let to_save: Option<SaveFile> = match app {
+        AppState::Running { state, .. } => Some(state.clone()),
+        AppState::LoginFlow { state, .. } => Some(state.clone()),
+        AppState::StartupChoice { state } => Some(state.clone()),
+        _ => None,
+    };
+    if let Some(ref state) = to_save {
         let _ = save::save_state(state);
     }
     *app = AppState::Quit;
@@ -170,6 +241,62 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
     }
 
     match app {
+        AppState::StartupChoice { state } => match code {
+            KeyCode::Char('l') => {
+                let state_owned = state.clone();
+                match cloud::start_login() {
+                    Ok(login) => {
+                        let (tx, rx) = mpsc::channel();
+                        spawn_login_poller(login.login_id.clone(), login.interval_seconds, tx);
+                        *app = AppState::LoginFlow {
+                            state: state_owned,
+                            login,
+                            result_rx: rx,
+                        };
+                    }
+                    Err(e) => {
+                        *app = AppState::Running {
+                            state: state_owned,
+                            flash: Some(Flash {
+                                message: format!("Impossible de démarrer la connexion: {}", e),
+                                kind: FlashKind::Error,
+                                created_at: Instant::now(),
+                            }),
+                            last_sync_attempt: Instant::now() - SYNC_RATE,
+                        };
+                    }
+                }
+            }
+            KeyCode::Enter | KeyCode::Char('n') | KeyCode::Char(' ') => {
+                let state_owned = state.clone();
+                *app = AppState::Running {
+                    state: state_owned,
+                    flash: None,
+                    last_sync_attempt: Instant::now() - SYNC_RATE,
+                };
+            }
+            KeyCode::Esc | KeyCode::Char('q') => {
+                persist_and_quit(app);
+            }
+            _ => {}
+        },
+
+        AppState::LoginFlow { state, .. } => match code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                let state_owned = state.clone();
+                *app = AppState::Running {
+                    state: state_owned,
+                    flash: Some(Flash {
+                        message: "Connexion annulée.".to_string(),
+                        kind: FlashKind::Info,
+                        created_at: Instant::now(),
+                    }),
+                    last_sync_attempt: Instant::now() - SYNC_RATE,
+                };
+            }
+            _ => {}
+        },
+
         AppState::Onboarding { name_input } => match code {
             KeyCode::Char(c) if name_input.chars().count() < 20 => name_input.push(c),
             KeyCode::Backspace => {
@@ -183,19 +310,12 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                 };
                 let state = SaveFile::new(Monster::spawn(name.clone()));
                 save::save_state(&state).ok();
-                *app = AppState::Running {
-                    state,
-                    flash: Some(Flash {
-                        message: format!("🥚 {} est né !", name),
-                        kind: FlashKind::Success,
-                        created_at: Instant::now(),
-                    }),
-                    last_sync_attempt: Instant::now(),
-                };
+                *app = AppState::StartupChoice { state };
             }
             KeyCode::Esc => *app = AppState::Quit,
             _ => {}
         },
+
         AppState::Running {
             state,
             flash,
@@ -231,6 +351,7 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
             }
             _ => {}
         },
+
         AppState::Quit => {}
     }
     Ok(())
@@ -299,24 +420,209 @@ fn should_replace_flash(flash: &Option<Flash>) -> bool {
     }
 }
 
-fn draw(f: &mut ratatui::Frame, state: &AppState) {
+/// Spawn a thread that polls the GitHub device flow until it resolves,
+/// then sends the result (account or error) through `tx`.
+fn spawn_login_poller(
+    login_id: String,
+    interval_seconds: u64,
+    tx: mpsc::Sender<Result<cloud::AccountEnvelope, String>>,
+) {
+    thread::spawn(move || {
+        let mut interval = Duration::from_secs(interval_seconds.max(1));
+        loop {
+            thread::sleep(interval);
+            match cloud::poll_login(&login_id) {
+                Ok(resp) => match resp.status {
+                    PollLoginStatus::Pending => {
+                        if let Some(next) = resp.interval_seconds {
+                            interval = Duration::from_secs(next.max(1));
+                        }
+                    }
+                    PollLoginStatus::Complete => {
+                        match resp.account {
+                            Some(account) => {
+                                let _ = tx.send(Ok(account));
+                            }
+                            None => {
+                                let _ = tx.send(Err(
+                                    "login completed without account data".to_string(),
+                                ));
+                            }
+                        }
+                        return;
+                    }
+                    PollLoginStatus::Expired | PollLoginStatus::Denied => {
+                        let _ = tx.send(Err(resp
+                            .message
+                            .unwrap_or_else(|| "login was not approved".to_string())));
+                        return;
+                    }
+                },
+                Err(e) => {
+                    let _ = tx.send(Err(e));
+                    return;
+                }
+            }
+        }
+    });
+}
+
+// ── Drawing ──────────────────────────────────────────────────────────────────
+
+fn draw(f: &mut ratatui::Frame, app: &AppState) {
+    let online = if let AppState::Running { state, .. } = app {
+        state.cloud.account.is_some()
+    } else {
+        false
+    };
+
+    let (status_label, status_color) = if online {
+        (" ● Online ", Color::Green)
+    } else {
+        (" ● Offline ", Color::DarkGray)
+    };
+
     let outer = Block::default()
         .borders(Borders::ALL)
-        .title(" Devimon 🐾 ")
-        .title_style(
-            Style::default()
-                .fg(Color::Magenta)
-                .add_modifier(Modifier::BOLD),
+        .title(
+            Title::from(Span::styled(
+                status_label,
+                Style::default().fg(status_color),
+            )),
+            // default: top-left
+        )
+        .title(
+            Title::from(Span::styled(
+                " Devimon 🐾 ",
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .alignment(Alignment::Center),
         )
         .border_style(Style::default().fg(Color::DarkGray));
+
     let inner = outer.inner(f.area());
     f.render_widget(outer, f.area());
 
-    match state {
+    match app {
+        AppState::StartupChoice { state } => draw_startup_choice(f, inner, state),
         AppState::Onboarding { name_input } => draw_onboarding(f, inner, name_input),
+        AppState::LoginFlow { login, .. } => draw_login_flow(f, inner, login),
         AppState::Running { state, flash, .. } => draw_running(f, inner, state, flash),
         AppState::Quit => {}
     }
+}
+
+fn draw_startup_choice(f: &mut ratatui::Frame, area: Rect, state: &SaveFile) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(13),
+            Constraint::Min(0),
+        ])
+        .split(area);
+
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("👋 Bon retour, {} !", state.monster.name),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Rejoindre le classement en ligne ?",
+            Style::default().fg(Color::Cyan),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(" l ", Style::default().bg(Color::DarkGray).fg(Color::Cyan)),
+            Span::styled(
+                "  Login via GitHub",
+                Style::default().fg(Color::White),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(" n ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+            Span::styled(
+                "  Rester hors ligne",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(""),
+        Line::from(Span::styled(
+            "[Entrée] hors ligne    [q] quitter",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+
+    f.render_widget(
+        Paragraph::new(lines).alignment(Alignment::Center),
+        chunks[1],
+    );
+}
+
+fn draw_login_flow(f: &mut ratatui::Frame, area: Rect, login: &cloud::StartLoginResponse) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(13),
+            Constraint::Min(0),
+        ])
+        .split(area);
+
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "☁️  Connexion à Devimon Cloud",
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Ouvre cette URL dans ton navigateur :",
+            Style::default().fg(Color::White),
+        )),
+        Line::from(Span::styled(
+            login.verification_uri.clone(),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::UNDERLINED),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Code :  ", Style::default().fg(Color::White)),
+            Span::styled(
+                login.user_code.clone(),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "En attente d'autorisation…",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(""),
+        Line::from(""),
+        Line::from(Span::styled(
+            "[q] Annuler",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+
+    f.render_widget(
+        Paragraph::new(lines).alignment(Alignment::Center),
+        chunks[1],
+    );
 }
 
 fn draw_onboarding(f: &mut ratatui::Frame, area: Rect, name_input: &str) {
