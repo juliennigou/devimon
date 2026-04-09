@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::time::Duration;
 
-const DEFAULT_API_BASE_URL: &str = "http://127.0.0.1:8787";
+const DEFAULT_API_BASE_URL: &str = "https://devimon-api.julienigou33.workers.dev";
 
 #[derive(Debug, Deserialize)]
 pub struct StartLoginResponse {
