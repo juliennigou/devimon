@@ -84,6 +84,44 @@ devimon login
 devimon sync
 ```
 
+## CI/CD
+
+GitHub Actions now handles:
+
+- CI on pushes and pull requests
+- automatic deploys from `main`
+
+Workflows:
+
+- `.github/workflows/ci.yml`
+- `.github/workflows/deploy.yml`
+
+### Required GitHub repository secrets
+
+Set these in the GitHub repository settings before the deploy workflow can work:
+
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+
+The Worker's GitHub OAuth secrets are still managed in Cloudflare itself:
+
+- `GITHUB_CLIENT_ID`
+- `GITHUB_CLIENT_SECRET`
+
+Those two do not need to live in GitHub Actions if they are already stored in the deployed Worker.
+
+### Deploy behavior
+
+On every push to `main`, GitHub Actions will:
+
+1. run `cargo check`
+2. install the worker dependencies
+3. apply `cloudflare/worker/schema.sql` to the remote D1 database
+4. deploy the Cloudflare Worker
+5. deploy the Pages website
+
+If you change `main`, production should redeploy automatically once the workflow secrets are set.
+
 ## Local development
 
 Run the app locally:

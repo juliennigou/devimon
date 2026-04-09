@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - leaderboard
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check Rust formatting
+        run: cargo fmt --check
+
+      - name: Check Rust build
+        run: cargo check
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cloudflare/worker/package-lock.json
+
+      - name: Install worker dependencies
+        working-directory: cloudflare/worker
+        run: npm ci
+
+      - name: Check worker syntax
+        run: node --check cloudflare/worker/src/index.js
+
+      - name: Check site syntax
+        run: node --check cloudflare/site/app.js
