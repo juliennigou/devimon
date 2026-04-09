@@ -322,44 +322,128 @@ fn cmd_whoami() -> Result<(), String> {
     Ok(())
 }
 
+const GITHUB_REPO: &str = "juliennigou/devimon";
+
 fn cmd_update() -> Result<(), String> {
-    // Verify cargo is available before doing anything.
-    let cargo_check = process::Command::new("cargo")
-        .arg("--version")
-        .output()
-        .map_err(|_| {
-            "cargo not found — install Rust from https://rustup.rs/ then retry.".to_string()
-        })?;
-    if !cargo_check.status.success() {
-        return Err(
-            "cargo not found — install Rust from https://rustup.rs/ then retry.".to_string(),
-        );
+    let current = env!("CARGO_PKG_VERSION");
+    println!("{}", "Checking for updates…".bright_cyan());
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let api_url = format!(
+        "https://api.github.com/repos/{}/releases/latest",
+        GITHUB_REPO
+    );
+    let resp = client
+        .get(&api_url)
+        .header("User-Agent", "devimon-updater")
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .map_err(|e| format!("failed to reach GitHub: {}", e))?;
+
+    if resp.status().as_u16() == 404 {
+        return Err("no releases published yet — try again after the next tag is pushed.".into());
+    }
+    if !resp.status().is_success() {
+        return Err(format!("GitHub API error: {}", resp.status()));
     }
 
-    println!("{}", "Updating Devimon…".bright_cyan().bold());
+    let release: serde_json::Value = resp
+        .json()
+        .map_err(|e| format!("failed to parse release info: {}", e))?;
+
+    let tag = release["tag_name"]
+        .as_str()
+        .ok_or("release has no tag_name")?
+        .trim_start_matches('v');
+
+    if tag == current {
+        println!(
+            "{}",
+            format!("Already on the latest version ({}).", current)
+                .bright_green()
+                .bold()
+        );
+        return Ok(());
+    }
+
     println!(
         "{}",
-        "Running: cargo install --git https://github.com/juliennigou/devimon --locked --force"
-            .bright_black()
+        format!("New version available: {} → {}", current, tag).bright_yellow()
     );
 
-    let status = process::Command::new("cargo")
-        .args([
-            "install",
-            "--git",
-            "https://github.com/juliennigou/devimon",
-            "--locked",
-            "--force",
-        ])
-        .status()
-        .map_err(|e| format!("failed to launch cargo: {}", e))?;
+    let asset_name = platform_asset_name()?;
 
-    if !status.success() {
-        return Err("update failed — see cargo output above for details.".to_string());
+    let assets = release["assets"]
+        .as_array()
+        .ok_or("release has no assets")?;
+
+    let asset = assets
+        .iter()
+        .find(|a| a["name"].as_str() == Some(asset_name))
+        .ok_or_else(|| {
+            format!(
+                "no pre-built binary for your platform ({}). \
+                 Build from source with: cargo install --git https://github.com/{} --locked --force",
+                asset_name, GITHUB_REPO
+            )
+        })?;
+
+    let download_url = asset["browser_download_url"]
+        .as_str()
+        .ok_or("asset has no download URL")?;
+
+    println!("{}", format!("Downloading {}…", asset_name).bright_cyan());
+
+    let bytes = client
+        .get(download_url)
+        .header("User-Agent", "devimon-updater")
+        .send()
+        .and_then(|r| r.bytes())
+        .map_err(|e| format!("download failed: {}", e))?;
+
+    let current_exe =
+        std::env::current_exe().map_err(|e| format!("cannot locate current binary: {}", e))?;
+
+    // Write to a temp file beside the binary, then atomically rename.
+    let tmp = current_exe.with_extension("update-tmp");
+    std::fs::write(&tmp, &bytes)
+        .map_err(|e| format!("failed to write update to disk: {}", e))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))
+            .map_err(|e| format!("failed to set binary permissions: {}", e))?;
     }
 
-    println!("{}", "Devimon updated successfully!".bright_green().bold());
+    std::fs::rename(&tmp, &current_exe)
+        .map_err(|e| format!("failed to replace binary (try with sudo?): {}", e))?;
+
+    println!(
+        "{}",
+        format!("Updated to {}! Restart devimon to use the new version.", tag)
+            .bright_green()
+            .bold()
+    );
     Ok(())
+}
+
+fn platform_asset_name() -> Result<&'static str, String> {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("macos", "aarch64") => Ok("devimon-macos-arm64"),
+        ("macos", "x86_64") => Ok("devimon-macos-x86_64"),
+        ("linux", "x86_64") => Ok("devimon-linux-x86_64"),
+        ("linux", "aarch64") => Ok("devimon-linux-arm64"),
+        (os, arch) => Err(format!(
+            "no pre-built binary for {}-{}. \
+             Build from source: cargo install --git https://github.com/{} --locked --force",
+            os, arch, GITHUB_REPO
+        )),
+    }
 }
 
 fn cmd_sync() -> Result<(), String> {
