@@ -136,7 +136,7 @@ document.querySelectorAll('.nav-link[href^="#"]').forEach((link) => {
 });
 
 // ── Onboarding terminal animation ──────────────────────────────────────
-// Scripted sequence that loops: install → logs → launch → ASCII pet → restart
+// Runs once: install → spawn → launch TUI → monster escapes into the page
 const ONBOARD_SCRIPT = [
   { type: "cmd",  text: "curl -fsSL https://raw.githubusercontent.com/juliennigou/devimon/main/install.sh | bash" },
   { type: "log",  text: "  Detecting platform... macOS ARM64", cls: "log-line" },
@@ -144,7 +144,7 @@ const ONBOARD_SCRIPT = [
   { type: "log",  text: "  Downloading devimon-macos-arm64...", cls: "log-line" },
   { type: "log",  text: "  Installing to /usr/local/bin/devimon", cls: "log-line log-ok" },
   { type: "log",  text: "  Devimon v0.1.2 installed.", cls: "log-line log-ok" },
-  { type: "pause", ms: 600 },
+  { type: "pause", ms: 500 },
   { type: "cmd",  text: "devimon spawn Kiara" },
   { type: "log",  text: "  Spawning new monster: Kiara", cls: "log-line" },
   { type: "log",  text: "  Species: Devimon  |  Stage: Baby  |  Level: 1", cls: "log-line log-ok" },
@@ -156,11 +156,10 @@ const ONBOARD_SCRIPT = [
     "  ┌──────────────────────────────────────┐",
     "  │         Kiara  ♥  Lv.1  Baby         │",
     "  │                                      │",
-    "  │            ( o_o )                    │",
-    "  │           (       )                   │",
-    "  │            \\_____/                    │",
-    "  │             /|||\\                     │",
-    "  │            d     b                    │",
+    "  │            .-^-.                     │",
+    "  │          .-( ^o^ )-.                 │",
+    "  │          /|___|\\                     │",
+    "  │          d_/ \\_b                     │",
     "  │                                      │",
     "  │  Hunger ████████░░  80%              │",
     "  │  Energy ██████████  100%             │",
@@ -169,24 +168,12 @@ const ONBOARD_SCRIPT = [
     "  │  [F]eed  [P]lay  [R]est  [S]ync     │",
     "  └──────────────────────────────────────┘",
   ]},
-  { type: "pause", ms: 2500 },
-  { type: "cmd",  text: "devimon feed Kiara" },
-  { type: "log",  text: "  You fed Kiara! Hunger → 100%  (+15 XP)", cls: "log-line log-ok" },
-  { type: "pause", ms: 800 },
-  { type: "cmd",  text: "devimon sync" },
-  { type: "log",  text: "  Syncing Kiara to cloud...", cls: "log-line" },
-  { type: "log",  text: "  ✓ Synced! Leaderboard rank: #42", cls: "log-line log-ok" },
-  { type: "pause", ms: 1500 },
-  { type: "clear" },
+  { type: "pause", ms: 2000 },
+  { type: "escape" }, // monster breaks free
 ];
 
-let onboardAbort = null;
-
 function sleep(ms) {
-  return new Promise((resolve) => {
-    const id = setTimeout(resolve, ms);
-    if (onboardAbort) onboardAbort.push(() => clearTimeout(id));
-  });
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function addLine(html, cls) {
@@ -206,46 +193,123 @@ async function typeText(el, text, speed) {
 }
 
 async function runOnboarding() {
-  while (true) {
-    for (const step of ONBOARD_SCRIPT) {
-      switch (step.type) {
-        case "cmd": {
-          const line = addLine(
-            '<span class="prompt">$</span> <span class="cmd"></span><span class="cursor-blink">█</span>',
-          );
-          const cmdSpan = line.querySelector(".cmd");
-          const cursor = line.querySelector(".cursor-blink");
-          await typeText(cmdSpan, step.text, 40);
-          cursor.remove();
-          await sleep(300);
-          break;
-        }
-        case "log": {
-          addLine(escapeHtml(step.text), step.cls || "log-line");
-          await sleep(180);
-          break;
-        }
-        case "ascii": {
-          const pre = document.createElement("pre");
-          pre.className = "onboard-line ascii-inline";
-          pre.textContent = step.lines.join("\n");
-          terminalBody.appendChild(pre);
-          terminalBody.scrollTop = terminalBody.scrollHeight;
-          await sleep(100);
-          break;
-        }
-        case "pause": {
-          await sleep(step.ms);
-          break;
-        }
-        case "clear": {
-          terminalBody.replaceChildren();
-          await sleep(400);
-          break;
-        }
+  for (const step of ONBOARD_SCRIPT) {
+    switch (step.type) {
+      case "cmd": {
+        const line = addLine(
+          '<span class="prompt">$</span> <span class="cmd"></span><span class="cursor-blink">█</span>',
+        );
+        const cmdSpan = line.querySelector(".cmd");
+        const cursor = line.querySelector(".cursor-blink");
+        await typeText(cmdSpan, step.text, 38);
+        cursor.remove();
+        await sleep(280);
+        break;
+      }
+      case "log": {
+        addLine(escapeHtml(step.text), step.cls || "log-line");
+        await sleep(160);
+        break;
+      }
+      case "ascii": {
+        const pre = document.createElement("pre");
+        pre.className = "onboard-line ascii-inline";
+        pre.textContent = step.lines.join("\n");
+        terminalBody.appendChild(pre);
+        terminalBody.scrollTop = terminalBody.scrollHeight;
+        await sleep(80);
+        break;
+      }
+      case "pause": {
+        await sleep(step.ms);
+        break;
+      }
+      case "escape": {
+        launchWanderingMonster();
+        break;
       }
     }
   }
+}
+
+// ── Wandering monster ────────────────────────────────────────────────────
+// Monster "escapes" from the terminal and wanders the page freely.
+
+const MONSTER_FRAMES = [
+  // frame A — legs apart
+  "   .-^-.\n .-( ^o^ )-.\n  /|___|\\ \n  b_/ \\_d",
+  // frame B — legs together
+  "   .-^-.\n .-( ^o^ )-.\n  /|___|\\ \n  d_/ \\_b",
+];
+
+function launchWanderingMonster() {
+  // Find where the terminal window is so we can start from there
+  const terminalEl = document.querySelector(".terminal-window");
+  const rect = terminalEl ? terminalEl.getBoundingClientRect() : { left: 100, bottom: 200 };
+
+  const el = document.createElement("pre");
+  el.className = "wandering-monster";
+  el.textContent = MONSTER_FRAMES[0];
+  document.body.appendChild(el);
+
+  // Start at bottom of the terminal panel
+  let x = rect.left + 40;
+  let y = window.scrollY + rect.bottom - 60;
+
+  el.style.left = x + "px";
+  el.style.top  = y + "px";
+
+  // Animate: smooth Lissajous wander across the full page
+  let tick = 0;
+  let frame = 0;
+  const SPEED = 0.6; // pixels per ms base
+
+  // Target points shift over time using sine waves
+  function getTarget(t) {
+    const margin = 60;
+    const maxX = window.innerWidth  - margin - 120;
+    const maxY = document.body.scrollHeight - margin - 80;
+    return {
+      tx: margin + ((Math.sin(t * 0.00031) * 0.5 + 0.5) * maxX),
+      ty: margin + ((Math.cos(t * 0.00019) * 0.5 + 0.5) * maxY),
+    };
+  }
+
+  let lastTime = null;
+
+  function step(now) {
+    if (!lastTime) lastTime = now;
+    const dt = now - lastTime;
+    lastTime = now;
+    tick += dt;
+
+    const { tx, ty } = getTarget(tick);
+    const dx = tx - x;
+    const dy = ty - y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist > 1) {
+      const move = Math.min(SPEED * dt, dist);
+      x += (dx / dist) * move;
+      y += (dy / dist) * move;
+    }
+
+    el.style.left = Math.round(x) + "px";
+    el.style.top  = Math.round(y) + "px";
+
+    // Flip horizontally based on direction
+    el.style.transform = dx < 0 ? "scaleX(-1)" : "scaleX(1)";
+
+    // Alternate walk frame every ~300ms
+    if (Math.floor(tick / 300) % 2 !== frame) {
+      frame = Math.floor(tick / 300) % 2;
+      el.textContent = MONSTER_FRAMES[frame];
+    }
+
+    requestAnimationFrame(step);
+  }
+
+  requestAnimationFrame(step);
 }
 
 // ── Boot ─────────────────────────────────────────────────────────────────
