@@ -34,6 +34,7 @@ body {
   background: var(--bg);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden; /* prevent horizontal scroll from any overflow */
 }
 
 a { color: var(--cyan); text-decoration: none; transition: color 0.2s; }
@@ -686,41 +687,58 @@ tbody tr:hover {
 @media (max-width: 768px) {
   body { font-size: 13px; }
 
-  .navbar-inner { padding: 0 12px; gap: 8px; }
-
+  /* Navbar */
+  .navbar-inner { padding: 0 12px; gap: 6px; }
   .nav-logo { display: none; }
-
   .nav-links { gap: 2px; }
-
-  .nav-link { padding: 6px 8px; font-size: 12px; }
-
+  .nav-link { padding: 5px 8px; font-size: 12px; }
   .nav-version { display: none; }
+  .nav-right { gap: 6px; }
 
-  .hero-terminal { padding: 0 12px; margin-top: 20px; }
+  /* Hero terminal */
+  .hero-terminal { padding: 0 12px; margin-top: 16px; }
+  .terminal-body { padding: 12px 14px; min-height: 160px; overflow-x: auto; }
 
-  .terminal-body { padding: 14px 16px; min-height: 180px; }
+  /* Long commands wrap instead of overflow */
+  .cmd { word-break: break-all; overflow-wrap: anywhere; }
+  .log-line { word-break: break-all; overflow-wrap: anywhere; }
 
-  .shell { padding: 20px 12px 40px; }
-
+  /* Shell & sections */
+  .shell { padding: 16px 12px 40px; }
   .section-bar { padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
-
-  .section-bar-left { gap: 12px; }
-
+  .section-bar-left { gap: 10px; }
   .section-title { font-size: 11px; }
-
   .section-stats { display: none; }
+  .section-footer { font-size: 11px; white-space: nowrap; overflow: hidden; }
 
-  th, td { padding: 10px 10px; font-size: 12px; }
+  /* Table */
+  th, td { padding: 9px 8px; font-size: 12px; }
+  .monster-id { display: none; }           /* hide UUID sub-line */
+  .xp-bar-track { display: none; }         /* hide XP progress bar */
+  .xp-cell { justify-content: flex-end; }
 
+  /* About */
   .about-content { padding: 14px 16px; }
-
   .about-grid { grid-template-columns: 1fr; }
+
+  /* Wandering monster — hide on mobile, would overlap content */
+  .wandering-monster { display: none; }
 }
 
 @media (max-width: 480px) {
+  /* Navbar — only keep links + GitHub at small sizes */
   .nav-lang { display: none; }
+  .gh-label { display: none; }            /* show only ★ count, no "GitHub" text */
+  .splash-art { font-size: 5.5px; }
 
-  .splash-art { font-size: 6px; }
+  /* Table — hide last active column, keep rank/name/level/xp */
+  td:nth-child(3),                         /* Stage */
+  th:nth-child(3),
+  td:nth-child(6),                         /* Last Active */
+  th:nth-child(6) { display: none; }
+
+  /* Leaderboard title truncates gracefully */
+  .section-title { max-width: 180px; }
 }
 
 /* ── Wandering monster ──────────────────────────────────────────────── */
