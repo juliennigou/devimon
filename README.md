@@ -34,7 +34,7 @@ If a pre-built binary isn't available for your platform and `cargo` is installed
 
 ### Option 2 — Manual binary download
 
-Go to [Releases](https://github.com/juliennigou/devimon/releases/latest), download the `v0.1.4` binary for your platform, then:
+Go to [Releases](https://github.com/juliennigou/devimon/releases/latest), download the `v0.1.5` binary for your platform, then:
 
 ```bash
 chmod +x devimon-macos-arm64          # adjust filename for your platform
@@ -101,10 +101,11 @@ Monsters evolve through three stages as they accumulate XP and hit stat mileston
 Baby  ──►  Young  ──►  Evolved
 ```
 
-Each stage unlocks new ASCII art and animations in the TUI. There are two species:
+Each stage unlocks new ASCII art and animations in the TUI. There are three species:
 
 - **Devimon** (default) — the classic terminal demon
-- **Dragon** — unlockable via `devimon spawn <name> --species dragon`
+- **Dragon** — high-energy starter with aerial animations
+- **Slime** — calm blob starter with a steady growth vibe
 
 ---
 
@@ -113,7 +114,7 @@ Each stage unlocks new ASCII art and animations in the TUI. There are two specie
 ```
 devimon                   Launch the interactive TUI
 devimon spawn <name>      Spawn a new monster
-  --species <dragon>      Choose species (default: devimon)
+  --species <dragon|slime> Choose species (default: devimon)
 devimon status            Print current stats
 devimon feed              Feed your monster (+40 Hunger, +5 Mood)
 devimon play              Play with your monster (+30 Mood, -10 Energy)
@@ -193,8 +194,8 @@ The GitHub OAuth secrets (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`) live in th
 **Releases** are triggered by pushing a version tag:
 
 ```bash
-git tag v0.1.4
-git push origin v0.1.4
+git tag v0.1.5
+git push origin v0.1.5
 ```
 
 This builds binaries for macOS ARM64/x86_64, Linux x86_64/ARM64 and publishes them as a GitHub Release.

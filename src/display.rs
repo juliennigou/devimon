@@ -45,6 +45,12 @@ const DRAGON_RENDERER: SpeciesRenderer = SpeciesRenderer {
     game_sprite: dragon_game_sprite,
 };
 
+const SLIME_RENDERER: SpeciesRenderer = SpeciesRenderer {
+    small_art: slime_small_art,
+    scene: slime_scene,
+    game_sprite: slime_game_sprite,
+};
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AnimationState {
     Idle,
@@ -56,6 +62,7 @@ fn renderer(species: Species) -> &'static SpeciesRenderer {
     match species {
         Species::Devimon => &DEVIMON_RENDERER,
         Species::Dragon => &DRAGON_RENDERER,
+        Species::Slime => &SLIME_RENDERER,
     }
 }
 
@@ -436,6 +443,161 @@ fn dragon_evolved_flight_sprite(monster: &Monster, tick: u64) -> Vec<String> {
     }
 }
 
+fn slime_small_art(monster: &Monster) -> Vec<String> {
+    let face = slime_face(monster, 0, monster.stage == Stage::Evolved);
+    match monster.stage {
+        Stage::Baby => vec![
+            "   .---.   ".to_string(),
+            format!(" .( {} ). ", face),
+            " (_______) ".to_string(),
+            "  b_/ \\_d  ".to_string(),
+        ],
+        Stage::Young => vec![
+            "   .-----.  ".to_string(),
+            format!(" .(  {}  ).", face),
+            " (_________)".to_string(),
+            "  b__/ \\__d ".to_string(),
+        ],
+        Stage::Evolved => vec![
+            "  .-------. ".to_string(),
+            format!(".(  {}  ).", face),
+            "(___________)".to_string(),
+            " b__/   \\__d ".to_string(),
+        ],
+    }
+}
+
+fn slime_scene(monster: &Monster, ctx: AnimationContext) -> SpriteScene {
+    let active = matches!(classify_mood(monster), MoodState::Proud | MoodState::Fine);
+    let lines = match monster.stage {
+        Stage::Baby => {
+            if active {
+                slime_baby_bounce(monster, ctx.tick)
+            } else {
+                slime_baby_idle(monster, ctx.tick)
+            }
+        }
+        Stage::Young => {
+            if active {
+                slime_young_bounce(monster, ctx.tick)
+            } else {
+                slime_young_idle(monster, ctx.tick)
+            }
+        }
+        Stage::Evolved => {
+            if active {
+                slime_evolved_bounce(monster, ctx.tick)
+            } else {
+                slime_evolved_idle(monster, ctx.tick)
+            }
+        }
+    };
+    let (sprite_w, sprite_h) = sprite_size(&lines);
+    let (x, y) = if active {
+        wander_motion(ctx, sprite_w, sprite_h, 0.11, 0.17)
+    } else {
+        idle_motion(ctx, sprite_w, sprite_h)
+    };
+
+    SpriteScene { lines, x, y }
+}
+
+fn slime_baby_idle(monster: &Monster, tick: u64) -> Vec<String> {
+    let face = slime_face(monster, tick, false);
+    vec![
+        "      .---.    ".to_string(),
+        format!("   .( {} ).  ", face),
+        "   (_______)  ".to_string(),
+        "    /  |  \\   ".to_string(),
+        "   b_/   \\_d  ".to_string(),
+    ]
+}
+
+fn slime_baby_bounce(monster: &Monster, tick: u64) -> Vec<String> {
+    let face = slime_face(monster, tick, false);
+    match (tick / 2) % 4 {
+        1 => vec![
+            "       .-.     ".to_string(),
+            format!("    .( {} ).  ", face),
+            "    (_______)  ".to_string(),
+            "      / | \\    ".to_string(),
+            "     b_/ \\_d   ".to_string(),
+        ],
+        3 => vec![
+            "      .---.    ".to_string(),
+            format!("   .( {} ).  ", face),
+            "   (_______)  ".to_string(),
+            "     / | \\    ".to_string(),
+            "    b_/ \\_d   ".to_string(),
+        ],
+        _ => slime_baby_idle(monster, tick),
+    }
+}
+
+fn slime_young_idle(monster: &Monster, tick: u64) -> Vec<String> {
+    let face = slime_face(monster, tick, false);
+    vec![
+        "     .-----.    ".to_string(),
+        format!("  .(  {}  ).  ", face),
+        "  (_________)  ".to_string(),
+        "   /  | |  \\   ".to_string(),
+        "  b__/   \\__d  ".to_string(),
+    ]
+}
+
+fn slime_young_bounce(monster: &Monster, tick: u64) -> Vec<String> {
+    let face = slime_face(monster, tick, false);
+    match (tick / 2) % 4 {
+        1 => vec![
+            "      .---.     ".to_string(),
+            format!("   .(  {}  ). ", face),
+            "   (_________)  ".to_string(),
+            "     / | | \\    ".to_string(),
+            "    b__/ \\__d   ".to_string(),
+        ],
+        3 => vec![
+            "     .-----.    ".to_string(),
+            format!("  .(  {}  ).  ", face),
+            "  (_________)  ".to_string(),
+            "    / | | \\    ".to_string(),
+            "   b__/   \\__d ".to_string(),
+        ],
+        _ => slime_young_idle(monster, tick),
+    }
+}
+
+fn slime_evolved_idle(monster: &Monster, tick: u64) -> Vec<String> {
+    let face = slime_face(monster, tick, true);
+    vec![
+        "    .-------.   ".to_string(),
+        format!(" .-(  {}  )-. ", face),
+        " (___________) ".to_string(),
+        "  / /| | |\\ \\  ".to_string(),
+        " b_/  |_|  \\_d ".to_string(),
+    ]
+}
+
+fn slime_evolved_bounce(monster: &Monster, tick: u64) -> Vec<String> {
+    let face = slime_face(monster, tick, true);
+    match (tick / 2) % 4 {
+        1 => vec![
+            "     .-----.    ".to_string(),
+            format!("  .-(  {}  )-. ", face),
+            "  (___________) ".to_string(),
+            "    /| | |\\    ".to_string(),
+            "   b_/ |_| \\_d ".to_string(),
+        ],
+        3 => vec![
+            "    .-------.   ".to_string(),
+            format!(" .-(  {}  )-. ", face),
+            " (___________) ".to_string(),
+            "   / | | | \\   ".to_string(),
+            "  b_/  |_|  \\_d".to_string(),
+        ],
+        _ => slime_evolved_idle(monster, tick),
+    }
+}
+
 fn devimon_game_sprite(monster: &Monster, pose: GameSpritePose) -> Vec<String> {
     let face = match monster.stage {
         Stage::Evolved => devimon_face(monster, 0, true),
@@ -460,6 +622,20 @@ fn dragon_game_sprite(monster: &Monster, pose: GameSpritePose) -> Vec<String> {
         Stage::Baby => dragon_baby_game_sprite(face, pose),
         Stage::Young => dragon_young_game_sprite(face, pose),
         Stage::Evolved => dragon_evolved_game_sprite(face, pose),
+    };
+    pad_sprite(lines, 11, 5)
+}
+
+fn slime_game_sprite(monster: &Monster, pose: GameSpritePose) -> Vec<String> {
+    let face = match monster.stage {
+        Stage::Evolved => slime_face(monster, 0, true),
+        _ => slime_face(monster, 0, false),
+    };
+
+    let lines = match monster.stage {
+        Stage::Baby => slime_baby_game_sprite(face, pose),
+        Stage::Young => slime_young_game_sprite(face, pose),
+        Stage::Evolved => slime_evolved_game_sprite(face, pose),
     };
     pad_sprite(lines, 11, 5)
 }
@@ -830,6 +1006,189 @@ fn dragon_evolved_game_sprite(face: &str, pose: GameSpritePose) -> Vec<String> {
     }
 }
 
+fn slime_baby_game_sprite(face: &str, pose: GameSpritePose) -> Vec<String> {
+    match pose {
+        GameSpritePose::Waiting => vec![
+            "   .---.   ".to_string(),
+            format!("  ( {} )  ", face),
+            "  (_____)  ".to_string(),
+            "   / | \\   ".to_string(),
+            "  b_/ \\_d  ".to_string(),
+        ],
+        GameSpritePose::Jump => vec![
+            "   .---.   ".to_string(),
+            format!("  ( {} )  ", face),
+            "  (_____)  ".to_string(),
+            "    / \\    ".to_string(),
+            "   _b d_   ".to_string(),
+        ],
+        GameSpritePose::Fall => vec![
+            "   .---.   ".to_string(),
+            format!("  ( {} )  ", face),
+            "  (_____)  ".to_string(),
+            "    / \\    ".to_string(),
+            "   b_ _d   ".to_string(),
+        ],
+        GameSpritePose::DuckA => vec![
+            "           ".to_string(),
+            format!(" _( {} )_ ", face),
+            "(_______  )".to_string(),
+            " b______d  ".to_string(),
+            "           ".to_string(),
+        ],
+        GameSpritePose::DuckB => vec![
+            "           ".to_string(),
+            format!(" _( {} )_ ", face),
+            "(  _______)".to_string(),
+            " b______d  ".to_string(),
+            "           ".to_string(),
+        ],
+        GameSpritePose::Crashed => vec![
+            "   .---.   ".to_string(),
+            "  ( x_x )  ".to_string(),
+            "  (_____)  ".to_string(),
+            "    / \\    ".to_string(),
+            "   b_ _d   ".to_string(),
+        ],
+        GameSpritePose::RunB => vec![
+            "   .---.   ".to_string(),
+            format!("  ( {} )  ", face),
+            "  (_____)  ".to_string(),
+            "   / | \\   ".to_string(),
+            "  b_/\\_d   ".to_string(),
+        ],
+        GameSpritePose::RunA => vec![
+            "   .---.   ".to_string(),
+            format!("  ( {} )  ", face),
+            "  (_____)  ".to_string(),
+            "   / | \\   ".to_string(),
+            "   b_/\\_d  ".to_string(),
+        ],
+    }
+}
+
+fn slime_young_game_sprite(face: &str, pose: GameSpritePose) -> Vec<String> {
+    match pose {
+        GameSpritePose::Waiting => vec![
+            "   .----.   ".to_string(),
+            format!("  ( {} )  ", face),
+            " (_______) ".to_string(),
+            "   / | \\   ".to_string(),
+            "  b_/ \\_d  ".to_string(),
+        ],
+        GameSpritePose::Jump => vec![
+            "   .----.   ".to_string(),
+            format!("  ( {} )  ", face),
+            " (_______) ".to_string(),
+            "   /   \\   ".to_string(),
+            "  _b   d_  ".to_string(),
+        ],
+        GameSpritePose::Fall => vec![
+            "   .----.   ".to_string(),
+            format!("  ( {} )  ", face),
+            " (_______) ".to_string(),
+            "   /   \\   ".to_string(),
+            "  b_   _d  ".to_string(),
+        ],
+        GameSpritePose::DuckA => vec![
+            "           ".to_string(),
+            format!(" _( {} )_ ", face),
+            "(________ )".to_string(),
+            " b_______d ".to_string(),
+            "           ".to_string(),
+        ],
+        GameSpritePose::DuckB => vec![
+            "           ".to_string(),
+            format!(" _( {} )_ ", face),
+            "( ________)".to_string(),
+            " b_______d ".to_string(),
+            "           ".to_string(),
+        ],
+        GameSpritePose::Crashed => vec![
+            "   .----.   ".to_string(),
+            "  ( x_x )  ".to_string(),
+            " (_______) ".to_string(),
+            "   /   \\   ".to_string(),
+            "  b_   _d  ".to_string(),
+        ],
+        GameSpritePose::RunB => vec![
+            "   .----.   ".to_string(),
+            format!("  ( {} )  ", face),
+            " (_______) ".to_string(),
+            "   /   \\   ".to_string(),
+            "  b_/ \\_d  ".to_string(),
+        ],
+        GameSpritePose::RunA => vec![
+            "   .----.   ".to_string(),
+            format!("  ( {} )  ", face),
+            " (_______) ".to_string(),
+            "   /   \\   ".to_string(),
+            "  d_/ \\_b  ".to_string(),
+        ],
+    }
+}
+
+fn slime_evolved_game_sprite(face: &str, pose: GameSpritePose) -> Vec<String> {
+    match pose {
+        GameSpritePose::Waiting => vec![
+            "  .------.  ".to_string(),
+            format!(" ( {} ) ", face),
+            "(_________) ".to_string(),
+            " / / | \\ \\ ".to_string(),
+            "b_/  |  \\_d".to_string(),
+        ],
+        GameSpritePose::Jump => vec![
+            "  .------.  ".to_string(),
+            format!(" ( {} ) ", face),
+            "(_________) ".to_string(),
+            "   /   \\    ".to_string(),
+            "  _b   d_   ".to_string(),
+        ],
+        GameSpritePose::Fall => vec![
+            "  .------.  ".to_string(),
+            format!(" ( {} ) ", face),
+            "(_________) ".to_string(),
+            "   /   \\    ".to_string(),
+            "  b_   _d   ".to_string(),
+        ],
+        GameSpritePose::DuckA => vec![
+            "           ".to_string(),
+            format!("_( {} )__ ", face),
+            "(_________)".to_string(),
+            "b_________d".to_string(),
+            "           ".to_string(),
+        ],
+        GameSpritePose::DuckB => vec![
+            "           ".to_string(),
+            format!("__( {} )_ ", face),
+            "(_________)".to_string(),
+            "d_________b".to_string(),
+            "           ".to_string(),
+        ],
+        GameSpritePose::Crashed => vec![
+            "  .------.  ".to_string(),
+            " ( x_x )    ".to_string(),
+            "(_________) ".to_string(),
+            "   /   \\    ".to_string(),
+            "  b_   _d   ".to_string(),
+        ],
+        GameSpritePose::RunB => vec![
+            "  .------.  ".to_string(),
+            format!(" ( {} ) ", face),
+            "(_________) ".to_string(),
+            "  / / \\ \\   ".to_string(),
+            " b_/   \\_d  ".to_string(),
+        ],
+        GameSpritePose::RunA => vec![
+            "  .------.  ".to_string(),
+            format!(" ( {} ) ", face),
+            "(_________) ".to_string(),
+            "  / / \\ \\   ".to_string(),
+            " d_/   \\_b  ".to_string(),
+        ],
+    }
+}
+
 fn devimon_face(monster: &Monster, tick: u64, fierce: bool) -> &'static str {
     if is_blinking(tick, 17) {
         return "-.-";
@@ -866,6 +1225,27 @@ fn dragon_face(monster: &Monster, fierce: bool) -> &'static str {
         "`-'"
     } else {
         ";-;"
+    }
+}
+
+fn slime_face(monster: &Monster, tick: u64, fierce: bool) -> &'static str {
+    if is_blinking(tick, 19) {
+        return "-_-";
+    }
+    if fierce {
+        if monster.mood >= 70.0 {
+            "O_O"
+        } else if monster.mood >= 35.0 {
+            "o_o"
+        } else {
+            "x_x"
+        }
+    } else if monster.mood >= 70.0 {
+        "^_^"
+    } else if monster.mood >= 35.0 {
+        "o_o"
+    } else {
+        ";_;"
     }
 }
 

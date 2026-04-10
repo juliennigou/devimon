@@ -2,7 +2,7 @@ use crate::actions;
 use crate::cloud::{self, PollLoginStatus};
 use crate::dino::{self, DinoCommand, DinoGamePhase, DinoGameSession};
 use crate::display::{self, MoodState};
-use crate::monster::Monster;
+use crate::monster::{Monster, Species};
 use crate::save::{self, SaveFile};
 use crate::watcher;
 use crate::xp;
@@ -30,6 +30,7 @@ const ANIMATION_FRAME_RATE: Duration = Duration::from_millis(60);
 const FLASH_DURATION: Duration = Duration::from_secs(3);
 const SYNC_RATE: Duration = Duration::from_secs(20);
 const DINO_MAX_STEPS_PER_LOOP: u8 = 5;
+const STARTER_SPECIES: [Species; 3] = [Species::Devimon, Species::Dragon, Species::Slime];
 
 // ── Menu ─────────────────────────────────────────────────────────────────────
 
@@ -108,14 +109,36 @@ enum ActiveMiniGame {
     Dino(DinoGameSession),
 }
 
+#[derive(Clone, Copy)]
+enum StartupChoiceMode {
+    FirstLaunch,
+    Returning,
+}
+
 // ── App state ─────────────────────────────────────────────────────────────────
 
 enum AppState {
     StartupChoice {
         state: SaveFile,
+        mode: StartupChoiceMode,
     },
-    Onboarding {
+    OnboardingIntro {
+        animation_tick: u64,
+    },
+    OnboardingEggSelect {
+        cursor: usize,
+        animation_tick: u64,
+    },
+    OnboardingName {
+        species: Species,
         name_input: String,
+        animation_tick: u64,
+    },
+    OnboardingConfirm {
+        species: Species,
+        name_input: String,
+        confirm_choice: usize,
+        animation_tick: u64,
     },
     LoginFlow {
         state: SaveFile,
@@ -242,34 +265,135 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> io::Result<()> 
 
 fn initial_state() -> io::Result<AppState> {
     match save::load_state()? {
-        None => Ok(AppState::Onboarding {
-            name_input: String::new(),
-        }),
+        None => Ok(AppState::OnboardingIntro { animation_tick: 0 }),
         Some(state) => {
             if state.cloud.account.is_none() {
-                Ok(AppState::StartupChoice { state })
-            } else {
-                Ok(AppState::Running {
+                Ok(AppState::StartupChoice {
                     state,
-                    flash: Some(Flash {
+                    mode: StartupChoiceMode::Returning,
+                })
+            } else {
+                Ok(make_running_state(
+                    state,
+                    Some(Flash {
                         message: "Bon retour ! Ton monstre t'attendait.".to_string(),
                         kind: FlashKind::Info,
                         created_at: Instant::now(),
                     }),
-                    last_sync_attempt: Instant::now() - SYNC_RATE,
-                    selected_tab: MenuTab::Home,
-                    collection_cursor: 0,
-                    games_cursor: 0,
-                    settings_cursor: 0,
-                    active_game: None,
-                    content_focused: false,
-                    settings_logout_confirm: false,
-                    settings_logout_choice: 0,
-                    animation_tick: 0,
-                })
+                ))
             }
         }
     }
+}
+
+fn make_running_state(state: SaveFile, flash: Option<Flash>) -> AppState {
+    AppState::Running {
+        state,
+        flash,
+        last_sync_attempt: Instant::now() - SYNC_RATE,
+        selected_tab: MenuTab::Home,
+        collection_cursor: 0,
+        games_cursor: 0,
+        settings_cursor: 0,
+        active_game: None,
+        content_focused: false,
+        settings_logout_confirm: false,
+        settings_logout_choice: 0,
+        animation_tick: 0,
+    }
+}
+
+fn starter_species(cursor: usize) -> Species {
+    STARTER_SPECIES
+        .get(cursor)
+        .copied()
+        .unwrap_or(Species::Devimon)
+}
+
+fn starter_species_name(species: Species) -> &'static str {
+    species.label()
+}
+
+fn starter_species_description(species: Species) -> &'static str {
+    match species {
+        Species::Devimon => "Balanced starter. Loyal, scrappy, and built for long coding sessions.",
+        Species::Dragon => "High-energy flyer. Fierce ladder climber with a proud streak.",
+        Species::Slime => "Calm code blob. Stable, curious, and quietly relentless.",
+    }
+}
+
+fn starter_default_name(species: Species) -> &'static str {
+    match species {
+        Species::Devimon => "Devi",
+        Species::Dragon => "Drako",
+        Species::Slime => "Gloop",
+    }
+}
+
+fn hatch_starter(species: Species, name_input: &str) -> SaveFile {
+    let name = if name_input.trim().is_empty() {
+        starter_default_name(species).to_string()
+    } else {
+        name_input.trim().to_string()
+    };
+    SaveFile::new(Monster::spawn_with_species(name, species))
+}
+
+fn starter_preview_monster(species: Species, name_input: &str) -> Monster {
+    let name = if name_input.trim().is_empty() {
+        starter_default_name(species).to_string()
+    } else {
+        name_input.trim().to_string()
+    };
+    Monster::spawn_with_species(name, species)
+}
+
+fn starter_egg_art(species: Species, selected: bool, tick: u64) -> Vec<String> {
+    let wobble_left = selected && (tick / 6).is_multiple_of(2);
+    let wobble_pad = if wobble_left { " " } else { "" };
+    let motif = match species {
+        Species::Devimon => {
+            if selected && (tick / 4).is_multiple_of(2) {
+                "><"
+            } else {
+                "oo"
+            }
+        }
+        Species::Dragon => {
+            if selected && (tick / 4).is_multiple_of(2) {
+                "^^"
+            } else {
+                "/\\"
+            }
+        }
+        Species::Slime => {
+            if selected && (tick / 4).is_multiple_of(2) {
+                "~~"
+            } else {
+                ".."
+            }
+        }
+    };
+
+    vec![
+        format!("{wobble_pad}    .-^^-.    "),
+        format!("{wobble_pad}  .'  {motif}  '.  "),
+        format!("{wobble_pad} /  .----.  \\ "),
+        format!("{wobble_pad}|  (______)  |"),
+        format!("{wobble_pad} \\   ____   / "),
+        format!("{wobble_pad}  '--------'  "),
+    ]
+}
+
+fn onboarding_title_art() -> &'static [&'static str] {
+    &[
+        "██████╗  ███████╗ ██╗   ██╗ ██╗ ███╗   ███╗  ██████╗  ███╗   ██╗",
+        "██╔══██╗ ██╔════╝ ██║   ██║ ██║ ████╗ ████║ ██╔═══██╗ ████╗  ██║",
+        "██║  ██║ █████╗   ██║   ██║ ██║ ██╔████╔██║ ██║   ██║ ██╔██╗ ██║",
+        "██║  ██║ ██╔══╝   ╚██╗ ██╔╝ ██║ ██║╚██╔╝██║ ██║   ██║ ██║╚██╗██║",
+        "██████╔╝ ███████╗  ╚████╔╝  ██║ ██║ ╚═╝ ██║ ╚██████╔╝ ██║ ╚████║",
+        "╚═════╝  ╚══════╝   ╚═══╝   ╚═╝ ╚═╝     ╚═╝  ╚═════╝  ╚═╝  ╚═══╝",
+    ]
 }
 
 // ── Tick ──────────────────────────────────────────────────────────────────────
@@ -293,46 +417,24 @@ fn tick(app: &mut AppState) -> io::Result<()> {
                     save::mark_dirty(state);
                     cloud::sync_state(state).ok();
                     save::save_state(state).ok();
-                    let new_state = state.clone();
-                    *app = AppState::Running {
-                        state: new_state,
-                        flash: Some(Flash {
+                    *app = make_running_state(
+                        state.clone(),
+                        Some(Flash {
                             message: format!("Logged in as @{}!", username),
                             kind: FlashKind::Success,
                             created_at: Instant::now(),
                         }),
-                        last_sync_attempt: Instant::now() - SYNC_RATE,
-                        selected_tab: MenuTab::Home,
-                        collection_cursor: 0,
-                        games_cursor: 0,
-                        settings_cursor: 0,
-                        active_game: None,
-                        content_focused: false,
-                        settings_logout_confirm: false,
-                        settings_logout_choice: 0,
-                        animation_tick: 0,
-                    };
+                    );
                 }
                 Err(e) => {
-                    let new_state = state.clone();
-                    *app = AppState::Running {
-                        state: new_state,
-                        flash: Some(Flash {
+                    *app = make_running_state(
+                        state.clone(),
+                        Some(Flash {
                             message: format!("Login failed: {}", e),
                             kind: FlashKind::Error,
                             created_at: Instant::now(),
                         }),
-                        last_sync_attempt: Instant::now() - SYNC_RATE,
-                        selected_tab: MenuTab::Home,
-                        collection_cursor: 0,
-                        games_cursor: 0,
-                        settings_cursor: 0,
-                        active_game: None,
-                        content_focused: false,
-                        settings_logout_confirm: false,
-                        settings_logout_choice: 0,
-                        animation_tick: 0,
-                    };
+                    );
                 }
             }
         }
@@ -381,8 +483,15 @@ fn tick(app: &mut AppState) -> io::Result<()> {
 }
 
 fn animate(app: &mut AppState) {
-    if let AppState::Running { animation_tick, .. } = app {
-        *animation_tick = animation_tick.wrapping_add(1);
+    match app {
+        AppState::OnboardingIntro { animation_tick }
+        | AppState::OnboardingEggSelect { animation_tick, .. }
+        | AppState::OnboardingName { animation_tick, .. }
+        | AppState::OnboardingConfirm { animation_tick, .. }
+        | AppState::Running { animation_tick, .. } => {
+            *animation_tick = animation_tick.wrapping_add(1);
+        }
+        _ => {}
     }
 }
 
@@ -443,7 +552,7 @@ fn persist_and_quit(app: &mut AppState) {
     let to_save: Option<SaveFile> = match app {
         AppState::Running { state, .. } => Some(state.clone()),
         AppState::LoginFlow { state, .. } => Some(state.clone()),
-        AppState::StartupChoice { state } => Some(state.clone()),
+        AppState::StartupChoice { state, .. } => Some(state.clone()),
         _ => None,
     };
     if let Some(ref state) = to_save {
@@ -462,7 +571,7 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> io::Result<()> {
     }
 
     match app {
-        AppState::StartupChoice { state } => match code {
+        AppState::StartupChoice { state, .. } => match code {
             _ if key.kind == KeyEventKind::Release => {}
             KeyCode::Char('l') => {
                 let state_owned = state.clone();
@@ -477,43 +586,19 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> io::Result<()> {
                         };
                     }
                     Err(e) => {
-                        *app = AppState::Running {
-                            state: state_owned,
-                            flash: Some(Flash {
+                        *app = make_running_state(
+                            state_owned,
+                            Some(Flash {
                                 message: format!("Impossible de démarrer la connexion: {}", e),
                                 kind: FlashKind::Error,
                                 created_at: Instant::now(),
                             }),
-                            last_sync_attempt: Instant::now() - SYNC_RATE,
-                            selected_tab: MenuTab::Home,
-                            collection_cursor: 0,
-                            games_cursor: 0,
-                            settings_cursor: 0,
-                            active_game: None,
-                            content_focused: false,
-                            settings_logout_confirm: false,
-                            settings_logout_choice: 0,
-                            animation_tick: 0,
-                        };
+                        );
                     }
                 }
             }
             KeyCode::Enter | KeyCode::Char('n') | KeyCode::Char(' ') => {
-                let state_owned = state.clone();
-                *app = AppState::Running {
-                    state: state_owned,
-                    flash: None,
-                    last_sync_attempt: Instant::now() - SYNC_RATE,
-                    selected_tab: MenuTab::Home,
-                    collection_cursor: 0,
-                    games_cursor: 0,
-                    settings_cursor: 0,
-                    active_game: None,
-                    content_focused: false,
-                    settings_logout_confirm: false,
-                    settings_logout_choice: 0,
-                    animation_tick: 0,
-                };
+                *app = make_running_state(state.clone(), None);
             }
             KeyCode::Esc | KeyCode::Char('q') => persist_and_quit(app),
             _ => {}
@@ -522,46 +607,126 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> io::Result<()> {
         AppState::LoginFlow { state, .. } => match code {
             _ if key.kind == KeyEventKind::Release => {}
             KeyCode::Esc | KeyCode::Char('q') => {
-                let state_owned = state.clone();
-                *app = AppState::Running {
-                    state: state_owned,
-                    flash: Some(Flash {
+                *app = make_running_state(
+                    state.clone(),
+                    Some(Flash {
                         message: "Connexion annulée.".to_string(),
                         kind: FlashKind::Info,
                         created_at: Instant::now(),
                     }),
-                    last_sync_attempt: Instant::now() - SYNC_RATE,
-                    selected_tab: MenuTab::Home,
-                    collection_cursor: 0,
-                    games_cursor: 0,
-                    settings_cursor: 0,
-                    active_game: None,
-                    content_focused: false,
-                    settings_logout_confirm: false,
-                    settings_logout_choice: 0,
+                );
+            }
+            _ => {}
+        },
+
+        AppState::OnboardingIntro { .. } => match code {
+            _ if key.kind == KeyEventKind::Release => {}
+            KeyCode::Enter | KeyCode::Char(' ') => {
+                *app = AppState::OnboardingEggSelect {
+                    cursor: 0,
                     animation_tick: 0,
+                };
+            }
+            KeyCode::Esc | KeyCode::Char('q') => *app = AppState::Quit,
+            _ => {}
+        },
+
+        AppState::OnboardingEggSelect {
+            cursor,
+            animation_tick,
+        } => match code {
+            _ if key.kind == KeyEventKind::Release => {}
+            KeyCode::Left | KeyCode::Up => {
+                if *cursor == 0 {
+                    *cursor = STARTER_SPECIES.len() - 1;
+                } else {
+                    *cursor -= 1;
+                }
+            }
+            KeyCode::Right | KeyCode::Down => {
+                *cursor = (*cursor + 1) % STARTER_SPECIES.len();
+            }
+            KeyCode::Enter => {
+                *app = AppState::OnboardingName {
+                    species: starter_species(*cursor),
+                    name_input: String::new(),
+                    animation_tick: *animation_tick,
+                };
+            }
+            KeyCode::Esc => {
+                *app = AppState::OnboardingIntro {
+                    animation_tick: *animation_tick,
                 };
             }
             _ => {}
         },
 
-        AppState::Onboarding { name_input } => match code {
+        AppState::OnboardingName {
+            species,
+            name_input,
+            animation_tick,
+        } => match code {
             _ if key.kind == KeyEventKind::Release => {}
-            KeyCode::Char(c) if name_input.chars().count() < 20 => name_input.push(c),
+            KeyCode::Char(c) if name_input.chars().count() < 20 && !c.is_control() => {
+                name_input.push(c)
+            }
             KeyCode::Backspace => {
                 name_input.pop();
             }
             KeyCode::Enter => {
-                let name = if name_input.trim().is_empty() {
-                    "Devi".to_string()
-                } else {
-                    name_input.trim().to_string()
+                *app = AppState::OnboardingConfirm {
+                    species: *species,
+                    name_input: name_input.clone(),
+                    confirm_choice: 0,
+                    animation_tick: *animation_tick,
                 };
-                let state = SaveFile::new(Monster::spawn(name.clone()));
-                save::save_state(&state).ok();
-                *app = AppState::StartupChoice { state };
             }
-            KeyCode::Esc => *app = AppState::Quit,
+            KeyCode::Esc => {
+                let species = *species;
+                *app = AppState::OnboardingEggSelect {
+                    cursor: STARTER_SPECIES
+                        .iter()
+                        .position(|starter| *starter == species)
+                        .unwrap_or(0),
+                    animation_tick: *animation_tick,
+                };
+            }
+            _ => {}
+        },
+
+        AppState::OnboardingConfirm {
+            species,
+            name_input,
+            confirm_choice,
+            animation_tick,
+        } => match code {
+            _ if key.kind == KeyEventKind::Release => {}
+            KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down => {
+                *confirm_choice = 1 - *confirm_choice;
+            }
+            KeyCode::Enter => {
+                if *confirm_choice == 0 {
+                    let state = hatch_starter(*species, name_input);
+                    save::save_state(&state).ok();
+                    *app = AppState::StartupChoice {
+                        state,
+                        mode: StartupChoiceMode::FirstLaunch,
+                    };
+                } else {
+                    *app = AppState::OnboardingName {
+                        species: *species,
+                        name_input: name_input.clone(),
+                        animation_tick: *animation_tick,
+                    };
+                }
+            }
+            KeyCode::Esc => {
+                *app = AppState::OnboardingName {
+                    species: *species,
+                    name_input: name_input.clone(),
+                    animation_tick: *animation_tick,
+                };
+            }
             _ => {}
         },
 
@@ -941,16 +1106,13 @@ fn spawn_login_poller(
 // ── Top-level draw ────────────────────────────────────────────────────────────
 
 fn draw(f: &mut ratatui::Frame, app: &AppState) {
-    let online = if let AppState::Running { state, .. } = app {
-        state.cloud.account.is_some()
-    } else {
-        false
-    };
-
-    let (status_label, status_color) = if online {
-        (" ● Online ", Color::Green)
-    } else {
-        (" ● Offline ", Color::DarkGray)
+    let (status_label, status_color) = match app {
+        AppState::Running { state, .. } if state.cloud.account.is_some() => {
+            (" ● Online ", Color::Green)
+        }
+        AppState::Running { .. } => (" ● Offline ", Color::DarkGray),
+        AppState::Quit => (" ● Offline ", Color::DarkGray),
+        _ => (" ● Setup ", Color::Cyan),
     };
 
     let outer = Block::default()
@@ -974,8 +1136,32 @@ fn draw(f: &mut ratatui::Frame, app: &AppState) {
     f.render_widget(outer, f.area());
 
     match app {
-        AppState::StartupChoice { state } => draw_startup_choice(f, inner, state),
-        AppState::Onboarding { name_input } => draw_onboarding(f, inner, name_input),
+        AppState::StartupChoice { state, mode } => draw_startup_choice(f, inner, state, *mode),
+        AppState::OnboardingIntro { animation_tick } => {
+            draw_onboarding_intro(f, inner, *animation_tick)
+        }
+        AppState::OnboardingEggSelect {
+            cursor,
+            animation_tick,
+        } => draw_onboarding_egg_select(f, inner, *cursor, *animation_tick),
+        AppState::OnboardingName {
+            species,
+            name_input,
+            animation_tick,
+        } => draw_onboarding_name(f, inner, *species, name_input, *animation_tick),
+        AppState::OnboardingConfirm {
+            species,
+            name_input,
+            confirm_choice,
+            animation_tick,
+        } => draw_onboarding_confirm(
+            f,
+            inner,
+            *species,
+            name_input,
+            *confirm_choice,
+            *animation_tick,
+        ),
         AppState::LoginFlow { login, .. } => draw_login_flow(f, inner, login),
         AppState::Running {
             state,
@@ -2152,7 +2338,12 @@ fn draw_coming_soon(f: &mut ratatui::Frame, area: Rect, tab: MenuTab) {
 
 // ── Full-screen modals ────────────────────────────────────────────────────────
 
-fn draw_startup_choice(f: &mut ratatui::Frame, area: Rect, state: &SaveFile) {
+fn draw_startup_choice(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    state: &SaveFile,
+    mode: StartupChoiceMode,
+) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -2162,18 +2353,29 @@ fn draw_startup_choice(f: &mut ratatui::Frame, area: Rect, state: &SaveFile) {
         ])
         .split(area);
 
+    let (headline, subline) = match mode {
+        StartupChoiceMode::FirstLaunch => (
+            format!("🥚 {} a éclos !", state.active_monster().name),
+            "Veux-tu lancer ta première aventure en ligne ou hors ligne ?".to_string(),
+        ),
+        StartupChoiceMode::Returning => (
+            format!("👋 Bon retour, {} !", state.active_monster().name),
+            "Rejoindre le classement en ligne ?".to_string(),
+        ),
+    };
+
     f.render_widget(
         Paragraph::new(vec![
             Line::from(""),
             Line::from(Span::styled(
-                format!("👋 Bon retour, {} !", state.active_monster().name),
+                headline,
                 Style::default()
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
             Line::from(Span::styled(
-                "Rejoindre le classement en ligne ?",
+                subline,
                 Style::default().fg(Color::Cyan),
             )),
             Line::from(""),
@@ -2255,49 +2457,394 @@ fn draw_login_flow(f: &mut ratatui::Frame, area: Rect, login: &cloud::StartLogin
     );
 }
 
-fn draw_onboarding(f: &mut ratatui::Frame, area: Rect, name_input: &str) {
+fn draw_onboarding_intro(f: &mut ratatui::Frame, area: Rect, animation_tick: u64) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(0),
-            Constraint::Length(14),
+            Constraint::Length(18),
             Constraint::Min(0),
+        ])
+        .split(area);
+
+    let start_style = if (animation_tick / 10).is_multiple_of(2) {
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Magenta)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(Color::White)
+            .bg(Color::DarkGray)
+            .add_modifier(Modifier::BOLD)
+    };
+
+    let mut lines = vec![Line::from("")];
+    for row in onboarding_title_art() {
+        lines.push(Line::from(Span::styled(
+            (*row).to_string(),
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        )));
+    }
+    lines.extend([
+        Line::from(""),
+        Line::from(Span::styled(
+            "Code to help your monster grow. Climb the ladder through real progress.",
+            Style::default().fg(Color::White),
+        )),
+        Line::from(Span::styled(
+            "Feed it, train it, then send it into battle when you're ready.",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(""),
+        Line::from(Span::styled("   START   ", start_style)),
+        Line::from(""),
+        Line::from(Span::styled(
+            "[Enter] continue    [Esc] quit",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ]);
+
+    f.render_widget(
+        Paragraph::new(lines)
+        .alignment(Alignment::Center),
+        chunks[1],
+    );
+}
+
+fn draw_onboarding_egg_select(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    cursor: usize,
+    animation_tick: u64,
+) {
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(12),
+            Constraint::Length(2),
         ])
         .split(area);
 
     f.render_widget(
         Paragraph::new(vec![
-            Line::from(""),
             Line::from(Span::styled(
-                "🥚 Bienvenue dans Devimon",
+                "Choose your starter egg",
                 Style::default()
-                    .fg(Color::Magenta)
+                    .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             )),
-            Line::from(""),
-            Line::from("Ton compagnon de terminal va naître."),
-            Line::from("Il grandira avec ton travail réel."),
-            Line::from(""),
             Line::from(Span::styled(
-                "Quel est son nom ?",
-                Style::default().fg(Color::White),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                format!("> {}_", name_input),
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
-            Line::from(""),
-            Line::from(Span::styled(
-                "[Entrée] confirmer    [Échap] quitter",
+                "Use the arrow keys to browse the three species, then press Enter to hatch one.",
                 Style::default().fg(Color::DarkGray),
             )),
         ])
         .alignment(Alignment::Center),
+        rows[0],
+    );
+
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Ratio(1, 3),
+            Constraint::Ratio(1, 3),
+            Constraint::Ratio(1, 3),
+        ])
+        .split(rows[1]);
+
+    for (index, species) in STARTER_SPECIES.iter().copied().enumerate() {
+        let selected = index == cursor;
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(if selected {
+                Color::Magenta
+            } else {
+                Color::DarkGray
+            }))
+            .title(if selected { " Selected " } else { " Starter " });
+        let inner = block.inner(cols[index]);
+        f.render_widget(block, cols[index]);
+
+        let inner_rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(6),
+                Constraint::Length(1),
+                Constraint::Length(2),
+                Constraint::Min(0),
+            ])
+            .split(inner);
+
+        let egg_lines: Vec<Line> = starter_egg_art(species, selected, animation_tick)
+            .into_iter()
+            .map(|line| {
+                Line::from(Span::styled(
+                    line,
+                    Style::default()
+                        .fg(if selected { Color::Cyan } else { Color::Gray })
+                        .add_modifier(if selected {
+                            Modifier::BOLD
+                        } else {
+                            Modifier::empty()
+                        }),
+                ))
+            })
+            .collect();
+        f.render_widget(
+            Paragraph::new(egg_lines).alignment(Alignment::Center),
+            inner_rows[0],
+        );
+
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                starter_species_name(species),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .alignment(Alignment::Center),
+            inner_rows[1],
+        );
+
+        f.render_widget(
+            Paragraph::new(starter_species_description(species))
+                .style(Style::default().fg(Color::DarkGray))
+                .alignment(Alignment::Center),
+            inner_rows[2],
+        );
+    }
+
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            "←→ move  ·  Enter choose  ·  Esc back",
+            Style::default().fg(Color::DarkGray),
+        ))
+        .alignment(Alignment::Center),
+        rows[2],
+    );
+}
+
+fn draw_onboarding_name(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    species: Species,
+    name_input: &str,
+    animation_tick: u64,
+) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(17),
+            Constraint::Min(0),
+        ])
+        .split(area);
+
+    let egg_lines: Vec<Line> = starter_egg_art(species, true, animation_tick)
+        .into_iter()
+        .map(|line| {
+            Line::from(Span::styled(
+                line,
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ))
+        })
+        .collect();
+
+    let display_name = if name_input.trim().is_empty() {
+        starter_default_name(species)
+    } else {
+        name_input.trim()
+    };
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(6),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
+        .split(chunks[1]);
+
+    f.render_widget(Paragraph::new(egg_lines).alignment(Alignment::Center), rows[0]);
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            format!("{} egg selected", starter_species_name(species)),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .alignment(Alignment::Center),
+        rows[1],
+    );
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            starter_species_description(species),
+            Style::default().fg(Color::DarkGray),
+        ))
+        .alignment(Alignment::Center),
+        rows[2],
+    );
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            "Choose a name",
+            Style::default().fg(Color::White),
+        ))
+        .alignment(Alignment::Center),
+        rows[3],
+    );
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            format!("> {}_", name_input),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .alignment(Alignment::Center),
+        rows[4],
+    );
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            format!("Default: {}", display_name),
+            Style::default().fg(Color::DarkGray),
+        ))
+        .alignment(Alignment::Center),
+        rows[5],
+    );
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            "[Enter] review hatch    [Esc] back",
+            Style::default().fg(Color::DarkGray),
+        ))
+        .alignment(Alignment::Center),
+        rows[6],
+    );
+}
+
+fn draw_onboarding_confirm(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    species: Species,
+    name_input: &str,
+    confirm_choice: usize,
+    _animation_tick: u64,
+) {
+    let preview = starter_preview_monster(species, name_input);
+    let preview_art: Vec<Line> = display::ascii_art(&preview)
+        .into_iter()
+        .map(|line| {
+            Line::from(Span::styled(
+                line,
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ))
+        })
+        .collect();
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(16),
+            Constraint::Min(0),
+        ])
+        .split(area);
+
+    let hatch_style = if confirm_choice == 0 {
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Green)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White).bg(Color::DarkGray)
+    };
+    let back_style = if confirm_choice == 1 {
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White).bg(Color::DarkGray)
+    };
+
+    f.render_widget(
+        Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "Confirm your starter",
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+        ])
+        .alignment(Alignment::Center),
         chunks[1],
+    );
+
+    let modal = center_rect_with_size(chunks[1], 48, 12);
+    f.render_widget(Clear, modal);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray))
+        .title(" Hatch ");
+    let inner = block.inner(modal);
+    f.render_widget(block, modal);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(4),
+            Constraint::Length(2),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
+        .split(inner);
+
+    f.render_widget(Paragraph::new(preview_art).alignment(Alignment::Center), rows[0]);
+    f.render_widget(
+        Paragraph::new(vec![
+            Line::from(Span::styled(
+                format!("{} the {}", preview.name, starter_species_name(species)),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                "Your monster will start at level 1 and grow as you code.",
+                Style::default().fg(Color::DarkGray),
+            )),
+        ])
+        .alignment(Alignment::Center),
+        rows[1],
+    );
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("   HATCH   ", hatch_style),
+            Span::raw("   "),
+            Span::styled("   BACK   ", back_style),
+        ]))
+        .alignment(Alignment::Center),
+        rows[2],
+    );
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            "←→ choose  ·  Enter confirm  ·  Esc back",
+            Style::default().fg(Color::DarkGray),
+        ))
+        .alignment(Alignment::Center),
+        rows[3],
     );
 }
 

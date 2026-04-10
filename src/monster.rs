@@ -11,6 +11,29 @@ pub enum Species {
     #[default]
     Devimon,
     Dragon,
+    Slime,
+}
+
+impl Species {
+    pub fn label(self) -> &'static str {
+        match self {
+            Species::Devimon => "Devimon",
+            Species::Dragon => "Dragon",
+            Species::Slime => "Slime",
+        }
+    }
+
+    pub fn parse(input: &str) -> Result<Self, String> {
+        match input.to_lowercase().as_str() {
+            "devimon" => Ok(Species::Devimon),
+            "dragon" => Ok(Species::Dragon),
+            "slime" => Ok(Species::Slime),
+            other => Err(format!(
+                "unknown species '{}' — try: devimon, dragon, slime",
+                other
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -91,6 +114,12 @@ impl Monster {
             peak_mood: 80.0,
             mood_samples: vec![80.0],
         }
+    }
+
+    pub fn spawn_with_species(name: String, species: Species) -> Self {
+        let mut monster = Self::spawn(name);
+        monster.species = species;
+        monster
     }
 
     /// XP needed to reach the next level. Grows linearly for predictability.

@@ -32,7 +32,7 @@ enum Commands {
     Spawn {
         /// Name of the monster
         name: Option<String>,
-        /// Species: devimon (default) or dragon
+        /// Species: devimon (default), dragon, or slime
         #[arg(long, default_value = "devimon")]
         species: String,
     },
@@ -150,20 +150,10 @@ fn maybe_sync_after_local_change(state: &mut SaveFile) {
 
 fn cmd_spawn(name: Option<String>, species_str: String) -> Result<(), String> {
     let name = name.unwrap_or_else(|| "Devi".to_string());
-    let species = match species_str.to_lowercase().as_str() {
-        "dragon" => monster::Species::Dragon,
-        "devimon" => monster::Species::Devimon,
-        other => {
-            return Err(format!(
-                "unknown species '{}' — try: devimon, dragon",
-                other
-            ));
-        }
-    };
+    let species = monster::Species::parse(&species_str)?;
     match save::load_state().map_err(|e| e.to_string())? {
         None => {
-            let mut m = monster::Monster::spawn(name.clone());
-            m.species = species;
+            let m = monster::Monster::spawn_with_species(name.clone(), species);
             let state = SaveFile::new(m);
             save::save_state(&state).map_err(|e| e.to_string())?;
             println!(
@@ -179,8 +169,7 @@ fn cmd_spawn(name: Option<String>, species_str: String) -> Result<(), String> {
                     name
                 ));
             }
-            let mut m = monster::Monster::spawn(name.clone());
-            m.species = species;
+            let m = monster::Monster::spawn_with_species(name.clone(), species);
             state.monsters.push(m);
             save::save_state(&state).map_err(|e| e.to_string())?;
             println!(
