@@ -1,5 +1,6 @@
 mod actions;
 mod cloud;
+mod dino;
 mod display;
 mod monster;
 mod save;
@@ -31,6 +32,9 @@ enum Commands {
     Spawn {
         /// Name of the monster
         name: Option<String>,
+        /// Species: devimon (default) or dragon
+        #[arg(long, default_value = "devimon")]
+        species: String,
     },
     /// Show the monster's current state
     Status,
@@ -65,7 +69,7 @@ fn main() {
 fn run(cli: Cli) -> Result<(), String> {
     match cli.command.unwrap_or(Commands::Ui) {
         Commands::Ui => ui::run().map_err(|e| e.to_string()),
-        Commands::Spawn { name } => cmd_spawn(name),
+        Commands::Spawn { name, species } => cmd_spawn(name, species),
         Commands::Status => cmd_status(),
         Commands::Feed => cmd_feed(),
         Commands::Play => cmd_play(),
@@ -144,12 +148,23 @@ fn maybe_sync_after_local_change(state: &mut SaveFile) {
     }
 }
 
-fn cmd_spawn(name: Option<String>) -> Result<(), String> {
+fn cmd_spawn(name: Option<String>, species_str: String) -> Result<(), String> {
     let name = name.unwrap_or_else(|| "Devi".to_string());
+    let species = match species_str.to_lowercase().as_str() {
+        "dragon" => monster::Species::Dragon,
+        "devimon" => monster::Species::Devimon,
+        other => {
+            return Err(format!(
+                "unknown species '{}' — try: devimon, dragon",
+                other
+            ));
+        }
+    };
     match save::load_state().map_err(|e| e.to_string())? {
         None => {
-            // First monster ever.
-            let state = SaveFile::new(monster::Monster::spawn(name.clone()));
+            let mut m = monster::Monster::spawn(name.clone());
+            m.species = species;
+            let state = SaveFile::new(m);
             save::save_state(&state).map_err(|e| e.to_string())?;
             println!(
                 "🥚 {} est né ! Prends-en soin.",
@@ -164,7 +179,9 @@ fn cmd_spawn(name: Option<String>) -> Result<(), String> {
                     name
                 ));
             }
-            state.monsters.push(monster::Monster::spawn(name.clone()));
+            let mut m = monster::Monster::spawn(name.clone());
+            m.species = species;
+            state.monsters.push(m);
             save::save_state(&state).map_err(|e| e.to_string())?;
             println!(
                 "🥚 {} a rejoint ta collection !",

@@ -34,7 +34,7 @@ If a pre-built binary isn't available for your platform and `cargo` is installed
 
 ### Option 2 — Manual binary download
 
-Go to [Releases](https://github.com/juliennigou/devimon/releases/latest), download the binary for your platform, then:
+Go to [Releases](https://github.com/juliennigou/devimon/releases/latest), download the `v0.1.3` binary for your platform, then:
 
 ```bash
 chmod +x devimon-macos-arm64          # adjust filename for your platform

@@ -39,6 +39,18 @@ impl Default for CloudState {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DinoGameProgress {
+    #[serde(default)]
+    pub best_time_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GameProgress {
+    #[serde(default)]
+    pub dino: DinoGameProgress,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SaveFile {
     pub version: u32,
@@ -57,9 +69,12 @@ pub struct SaveFile {
 
     #[serde(default)]
     pub cloud: CloudState,
+
+    #[serde(default)]
+    pub games: GameProgress,
 }
 
-const SAVE_VERSION: u32 = 3;
+const SAVE_VERSION: u32 = 4;
 
 fn new_device_id() -> String {
     Uuid::new_v4().to_string()
@@ -74,6 +89,7 @@ impl SaveFile {
             active_monster_id: id,
             monster: None,
             cloud: CloudState::default(),
+            games: GameProgress::default(),
         }
     }
 

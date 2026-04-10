@@ -1,12 +1,14 @@
 use crate::actions;
 use crate::cloud::{self, PollLoginStatus};
+use crate::dino::{self, DinoCommand, DinoGamePhase, DinoGameSession};
 use crate::display::{self, MoodState};
 use crate::monster::Monster;
 use crate::save::{self, SaveFile};
 use crate::watcher;
 use crate::xp;
+use chrono::Utc;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -23,9 +25,11 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-const TICK_RATE: Duration = Duration::from_millis(500);
+const GAME_TICK_RATE: Duration = Duration::from_millis(500);
+const ANIMATION_FRAME_RATE: Duration = Duration::from_millis(60);
 const FLASH_DURATION: Duration = Duration::from_secs(3);
 const SYNC_RATE: Duration = Duration::from_secs(20);
+const DINO_MAX_STEPS_PER_LOOP: u8 = 5;
 
 // ── Menu ─────────────────────────────────────────────────────────────────────
 
@@ -61,6 +65,31 @@ const MENU_ITEMS: &[MenuTab] = &[
     MenuTab::Settings,
 ];
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MiniGame {
+    DinoRun,
+}
+
+impl MiniGame {
+    fn label(self) -> &'static str {
+        match self {
+            MiniGame::DinoRun => "Dino Run",
+        }
+    }
+
+    fn description(self) -> &'static str {
+        match self {
+            MiniGame::DinoRun => "Jump over cacti with your main monster.",
+        }
+    }
+}
+
+const MINI_GAMES: &[MiniGame] = &[MiniGame::DinoRun];
+
+enum ActiveMiniGame {
+    Dino(DinoGameSession),
+}
+
 // ── App state ─────────────────────────────────────────────────────────────────
 
 enum AppState {
@@ -81,8 +110,11 @@ enum AppState {
         last_sync_attempt: Instant,
         selected_tab: MenuTab,
         collection_cursor: usize,
+        games_cursor: usize,
+        active_game: Option<ActiveMiniGame>,
         /// true = ↑↓ navigate content panel; false = ↑↓ navigate sidebar
         content_focused: bool,
+        animation_tick: u64,
     },
     Quit,
 }
@@ -126,23 +158,58 @@ pub fn run() -> io::Result<()> {
 
 fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> io::Result<()> {
     let mut app = initial_state()?;
-    let mut last_tick = Instant::now();
+    let mut last_game_tick = Instant::now();
+    let mut last_animation_frame = Instant::now();
+    let mut last_dino_step = Instant::now();
+    let mut dino_accumulator = Duration::ZERO;
 
     loop {
         terminal.draw(|f| draw(f, &app))?;
 
-        let timeout = TICK_RATE.saturating_sub(last_tick.elapsed());
+        let mut timeout = std::cmp::min(
+            GAME_TICK_RATE.saturating_sub(last_game_tick.elapsed()),
+            ANIMATION_FRAME_RATE.saturating_sub(last_animation_frame.elapsed()),
+        );
+        if has_active_dino(&app) {
+            timeout = std::cmp::min(timeout, dino::SIM_STEP.saturating_sub(dino_accumulator));
+        }
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    handle_key(&mut app, key.code, key.modifiers)?;
+                if matches!(
+                    key.kind,
+                    KeyEventKind::Press | KeyEventKind::Repeat | KeyEventKind::Release
+                ) {
+                    handle_key(&mut app, key)?;
                 }
             }
         }
 
-        if last_tick.elapsed() >= TICK_RATE {
+        let now = Instant::now();
+        if has_active_dino(&app) {
+            dino_accumulator = dino_accumulator.saturating_add(now - last_dino_step);
+            last_dino_step = now;
+            let mut steps = 0;
+            while dino_accumulator >= dino::SIM_STEP && steps < DINO_MAX_STEPS_PER_LOOP {
+                step_dino(&mut app);
+                dino_accumulator = dino_accumulator.saturating_sub(dino::SIM_STEP);
+                steps += 1;
+            }
+            if steps == DINO_MAX_STEPS_PER_LOOP {
+                dino_accumulator = Duration::ZERO;
+            }
+        } else {
+            last_dino_step = now;
+            dino_accumulator = Duration::ZERO;
+        }
+
+        if last_animation_frame.elapsed() >= ANIMATION_FRAME_RATE {
+            animate(&mut app);
+            last_animation_frame = now;
+        }
+
+        if last_game_tick.elapsed() >= GAME_TICK_RATE {
             tick(&mut app)?;
-            last_tick = Instant::now();
+            last_game_tick = now;
         }
 
         if matches!(app, AppState::Quit) {
@@ -171,7 +238,10 @@ fn initial_state() -> io::Result<AppState> {
                     last_sync_attempt: Instant::now() - SYNC_RATE,
                     selected_tab: MenuTab::Home,
                     collection_cursor: 0,
+                    games_cursor: 0,
+                    active_game: None,
                     content_focused: false,
+                    animation_tick: 0,
                 })
             }
         }
@@ -210,7 +280,10 @@ fn tick(app: &mut AppState) -> io::Result<()> {
                         last_sync_attempt: Instant::now() - SYNC_RATE,
                         selected_tab: MenuTab::Home,
                         collection_cursor: 0,
+                        games_cursor: 0,
+                        active_game: None,
                         content_focused: false,
+                        animation_tick: 0,
                     };
                 }
                 Err(e) => {
@@ -225,7 +298,10 @@ fn tick(app: &mut AppState) -> io::Result<()> {
                         last_sync_attempt: Instant::now() - SYNC_RATE,
                         selected_tab: MenuTab::Home,
                         collection_cursor: 0,
+                        games_cursor: 0,
+                        active_game: None,
                         content_focused: false,
+                        animation_tick: 0,
                     };
                 }
             }
@@ -237,9 +313,14 @@ fn tick(app: &mut AppState) -> io::Result<()> {
         state,
         flash,
         last_sync_attempt,
+        active_game,
         ..
     } = app
     {
+        if active_game.is_some() {
+            return Ok(());
+        }
+
         let idx = state.active_monster_idx();
         let xp_gained = xp::drain_and_apply(&mut state.monsters[idx]).unwrap_or(0);
         if xp_gained > 0 {
@@ -269,6 +350,63 @@ fn tick(app: &mut AppState) -> io::Result<()> {
     Ok(())
 }
 
+fn animate(app: &mut AppState) {
+    if let AppState::Running { animation_tick, .. } = app {
+        *animation_tick = animation_tick.wrapping_add(1);
+    }
+}
+
+fn has_active_dino(app: &AppState) -> bool {
+    matches!(
+        app,
+        AppState::Running {
+            active_game: Some(ActiveMiniGame::Dino(_)),
+            ..
+        }
+    )
+}
+
+fn step_dino(app: &mut AppState) {
+    if let AppState::Running {
+        state,
+        flash,
+        active_game,
+        ..
+    } = app
+    {
+        if let Some(ActiveMiniGame::Dino(session)) = active_game {
+            session.update();
+            if session.phase == DinoGamePhase::Running {
+                let total_xp = (session.elapsed_ms / dino::XP_INTERVAL_MS) as u32;
+                if total_xp > session.xp_awarded {
+                    let gained = total_xp - session.xp_awarded;
+                    session.xp_awarded = total_xp;
+                    let (monster_name, evolved) = award_dino_xp_to_runner(state, gained);
+                    save::mark_dirty(state);
+                    *flash = Some(Flash {
+                        message: match evolved {
+                            Some(stage) => format!(
+                                "+{} XP in Dino Run — {} evolved to {}!",
+                                gained,
+                                monster_name,
+                                stage.label()
+                            ),
+                            None => format!("+{} XP in Dino Run", gained),
+                        },
+                        kind: FlashKind::Success,
+                        created_at: Instant::now(),
+                    });
+                }
+
+                let monster = state.active_monster();
+                if dino::has_collision(monster, session) {
+                    finish_dino_run(state, flash, session);
+                }
+            }
+        }
+    }
+}
+
 // ── Input ─────────────────────────────────────────────────────────────────────
 
 fn persist_and_quit(app: &mut AppState) {
@@ -284,7 +422,10 @@ fn persist_and_quit(app: &mut AppState) {
     *app = AppState::Quit;
 }
 
-fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Result<()> {
+fn handle_key(app: &mut AppState, key: KeyEvent) -> io::Result<()> {
+    let code = key.code;
+    let mods = key.modifiers;
+
     if mods.contains(KeyModifiers::CONTROL) && matches!(code, KeyCode::Char('c')) {
         persist_and_quit(app);
         return Ok(());
@@ -292,6 +433,7 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
 
     match app {
         AppState::StartupChoice { state } => match code {
+            _ if key.kind == KeyEventKind::Release => {}
             KeyCode::Char('l') => {
                 let state_owned = state.clone();
                 match cloud::start_login() {
@@ -315,7 +457,10 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                             last_sync_attempt: Instant::now() - SYNC_RATE,
                             selected_tab: MenuTab::Home,
                             collection_cursor: 0,
+                            games_cursor: 0,
+                            active_game: None,
                             content_focused: false,
+                            animation_tick: 0,
                         };
                     }
                 }
@@ -328,7 +473,10 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                     last_sync_attempt: Instant::now() - SYNC_RATE,
                     selected_tab: MenuTab::Home,
                     collection_cursor: 0,
+                    games_cursor: 0,
+                    active_game: None,
                     content_focused: false,
+                    animation_tick: 0,
                 };
             }
             KeyCode::Esc | KeyCode::Char('q') => persist_and_quit(app),
@@ -336,6 +484,7 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
         },
 
         AppState::LoginFlow { state, .. } => match code {
+            _ if key.kind == KeyEventKind::Release => {}
             KeyCode::Esc | KeyCode::Char('q') => {
                 let state_owned = state.clone();
                 *app = AppState::Running {
@@ -348,13 +497,17 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                     last_sync_attempt: Instant::now() - SYNC_RATE,
                     selected_tab: MenuTab::Home,
                     collection_cursor: 0,
+                    games_cursor: 0,
+                    active_game: None,
                     content_focused: false,
+                    animation_tick: 0,
                 };
             }
             _ => {}
         },
 
         AppState::Onboarding { name_input } => match code {
+            _ if key.kind == KeyEventKind::Release => {}
             KeyCode::Char(c) if name_input.chars().count() < 20 => name_input.push(c),
             KeyCode::Backspace => {
                 name_input.pop();
@@ -379,8 +532,54 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
             last_sync_attempt,
             selected_tab,
             collection_cursor,
+            games_cursor,
+            active_game,
             content_focused,
+            ..
         } => match code {
+            KeyCode::Char('q') | KeyCode::Esc
+                if key.kind != KeyEventKind::Release
+                    && matches!(active_game, Some(ActiveMiniGame::Dino(_))) =>
+            {
+                *active_game = None;
+                save::save_state(state).ok();
+            }
+            KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down | KeyCode::Enter
+                if matches!(active_game, Some(ActiveMiniGame::Dino(_))) =>
+            {
+                if let Some(ActiveMiniGame::Dino(session)) = active_game {
+                    match (code, key.kind) {
+                        (
+                            KeyCode::Char(' ') | KeyCode::Up,
+                            KeyEventKind::Press | KeyEventKind::Repeat,
+                        ) => {
+                            session.handle_command(DinoCommand::JumpPressed);
+                        }
+                        (KeyCode::Char(' ') | KeyCode::Up, KeyEventKind::Release) => {
+                            session.handle_command(DinoCommand::JumpReleased);
+                        }
+                        (KeyCode::Down, KeyEventKind::Press | KeyEventKind::Repeat) => {
+                            session.handle_command(DinoCommand::DuckPressed);
+                        }
+                        (KeyCode::Down, KeyEventKind::Release) => {
+                            session.handle_command(DinoCommand::DuckReleased);
+                        }
+                        (KeyCode::Enter, KeyEventKind::Press | KeyEventKind::Repeat) => {
+                            session.handle_command(DinoCommand::Restart);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            KeyCode::Char('p')
+                if key.kind != KeyEventKind::Release
+                    && matches!(active_game, Some(ActiveMiniGame::Dino(_))) =>
+            {
+                if let Some(ActiveMiniGame::Dino(session)) = active_game {
+                    session.handle_command(DinoCommand::TogglePause);
+                }
+            }
+            _ if key.kind == KeyEventKind::Release => {}
             KeyCode::Char('q') | KeyCode::Esc => {
                 if *content_focused {
                     *content_focused = false;
@@ -399,6 +598,7 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                 if idx > 0 {
                     *selected_tab = MENU_ITEMS[idx - 1];
                     *collection_cursor = 0;
+                    *games_cursor = 0;
                 }
             }
             KeyCode::Down if !*content_focused => {
@@ -409,14 +609,18 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                 if idx + 1 < MENU_ITEMS.len() {
                     *selected_tab = MENU_ITEMS[idx + 1];
                     *collection_cursor = 0;
+                    *games_cursor = 0;
                 }
             }
             // → enters content panel (only on tabs that have interactive content)
-            KeyCode::Right if !*content_focused && *selected_tab == MenuTab::Collection => {
+            KeyCode::Right
+                if !*content_focused
+                    && matches!(*selected_tab, MenuTab::Collection | MenuTab::Games) =>
+            {
                 *content_focused = true;
             }
             // ← exits content panel back to sidebar
-            KeyCode::Left if *content_focused => {
+            KeyCode::Left if *content_focused && active_game.is_none() => {
                 *content_focused = false;
             }
             // ↑↓ in content mode → navigate collection items
@@ -428,6 +632,20 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
             KeyCode::Down if *content_focused && *selected_tab == MenuTab::Collection => {
                 if *collection_cursor + 1 < state.monsters.len() {
                     *collection_cursor += 1;
+                }
+            }
+            KeyCode::Up
+                if *content_focused && *selected_tab == MenuTab::Games && active_game.is_none() =>
+            {
+                if *games_cursor > 0 {
+                    *games_cursor -= 1;
+                }
+            }
+            KeyCode::Down
+                if *content_focused && *selected_tab == MenuTab::Games && active_game.is_none() =>
+            {
+                if *games_cursor + 1 < MINI_GAMES.len() {
+                    *games_cursor += 1;
                 }
             }
             KeyCode::Enter if *content_focused && *selected_tab == MenuTab::Collection => {
@@ -450,6 +668,22 @@ fn handle_key(app: &mut AppState, code: KeyCode, mods: KeyModifiers) -> io::Resu
                             created_at: Instant::now(),
                         });
                     }
+                }
+            }
+            KeyCode::Enter
+                if *content_focused && *selected_tab == MenuTab::Games && active_game.is_none() =>
+            {
+                if active_game.is_none() {
+                    let seed = state.active_monster().total_xp as u64
+                        + state.games.dino.best_time_ms
+                        + *games_cursor as u64
+                        + 1;
+                    *active_game = match MINI_GAMES.get(*games_cursor).copied() {
+                        Some(MiniGame::DinoRun) => {
+                            Some(ActiveMiniGame::Dino(DinoGameSession::new(seed)))
+                        }
+                        None => None,
+                    };
                 }
             }
 
@@ -638,7 +872,10 @@ fn draw(f: &mut ratatui::Frame, app: &AppState) {
             flash,
             selected_tab,
             collection_cursor,
+            games_cursor,
+            active_game,
             content_focused,
+            animation_tick,
             ..
         } => draw_running(
             f,
@@ -647,7 +884,10 @@ fn draw(f: &mut ratatui::Frame, app: &AppState) {
             flash,
             *selected_tab,
             *collection_cursor,
+            *games_cursor,
+            active_game.as_ref(),
             *content_focused,
+            *animation_tick,
         ),
         AppState::Quit => {}
     }
@@ -662,11 +902,14 @@ fn draw_running(
     flash: &Option<Flash>,
     selected_tab: MenuTab,
     collection_cursor: usize,
+    games_cursor: usize,
+    active_game: Option<&ActiveMiniGame>,
     content_focused: bool,
+    animation_tick: u64,
 ) {
     let cols = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Ratio(1, 3), Constraint::Ratio(2, 3)])
+        .constraints([Constraint::Ratio(1, 4), Constraint::Ratio(3, 4)])
         .split(area);
 
     draw_sidebar(f, cols[0], selected_tab, state, content_focused);
@@ -677,7 +920,10 @@ fn draw_running(
         flash,
         selected_tab,
         collection_cursor,
+        games_cursor,
+        active_game,
         content_focused,
+        animation_tick,
     );
 }
 
@@ -795,27 +1041,37 @@ fn draw_content(
     flash: &Option<Flash>,
     selected_tab: MenuTab,
     collection_cursor: usize,
+    games_cursor: usize,
+    active_game: Option<&ActiveMiniGame>,
     content_focused: bool,
+    animation_tick: u64,
 ) {
     match selected_tab {
-        MenuTab::Home => draw_home(f, area, state, flash),
+        MenuTab::Home => draw_home(f, area, state, flash, animation_tick / 2),
         MenuTab::Collection => {
             draw_collection(f, area, state, collection_cursor, flash, content_focused)
         }
+        MenuTab::Games => draw_games(f, area, state, games_cursor, active_game, content_focused),
         tab => draw_coming_soon(f, area, tab),
     }
 }
 
 // ── Home ──────────────────────────────────────────────────────────────────────
 
-fn draw_home(f: &mut ratatui::Frame, area: Rect, state: &SaveFile, flash: &Option<Flash>) {
+fn draw_home(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    state: &SaveFile,
+    flash: &Option<Flash>,
+    animation_tick: u64,
+) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
         .constraints([Constraint::Min(0), Constraint::Length(2)])
         .split(area);
 
-    draw_monster_panel(f, rows[0], state.active_monster(), flash);
+    draw_monster_panel(f, rows[0], state.active_monster(), flash, animation_tick);
     draw_stats_panel(f, rows[0], state.active_monster());
     draw_footer(f, rows[1], state);
 }
@@ -825,19 +1081,19 @@ fn draw_monster_panel(
     area: Rect,
     monster: &Monster,
     flash: &Option<Flash>,
+    animation_tick: u64,
 ) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(5),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Min(0),
+            Constraint::Length(1), // [0] header
+            Constraint::Length(1), // [1] space
+            Constraint::Min(5),    // [2] art (expandable for dragon flight)
+            Constraint::Length(1), // [3] space
+            Constraint::Length(1), // [4] xp gauge
+            Constraint::Length(1), // [5] space
+            Constraint::Length(1), // [6] personality
+            Constraint::Length(1), // [7] flash
         ])
         .split(area);
 
@@ -868,7 +1124,18 @@ fn draw_monster_panel(
         chunks[0],
     );
 
-    let art: Vec<Line> = display::ascii_art_big(monster)
+    let art_area = chunks[2];
+    let scene = display::tui_scene(monster, animation_tick, art_area.width, art_area.height, 24);
+    let sprite_h = scene.lines.len() as u16;
+    let sprite_rect = Rect {
+        x: art_area.x + scene.x.min(art_area.width.saturating_sub(1)),
+        y: art_area.y + scene.y.min(art_area.height.saturating_sub(sprite_h)),
+        width: art_area.width.saturating_sub(scene.x),
+        height: sprite_h.min(art_area.height.saturating_sub(scene.y)),
+    };
+
+    let art: Vec<Line> = scene
+        .lines
         .into_iter()
         .map(|l| {
             Line::from(Span::styled(
@@ -879,7 +1146,7 @@ fn draw_monster_panel(
             ))
         })
         .collect();
-    f.render_widget(Paragraph::new(art).alignment(Alignment::Center), chunks[2]);
+    f.render_widget(Paragraph::new(art), sprite_rect);
 
     render_xp_gauge(f, center_rect(chunks[4], 55), monster);
 
@@ -1227,6 +1494,244 @@ fn draw_monster_card(
         ]);
         f.render_widget(Paragraph::new(needs), inner_rows[1]);
     }
+}
+
+// ── Games ─────────────────────────────────────────────────────────────────────
+
+fn draw_games(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    state: &SaveFile,
+    cursor: usize,
+    active_game: Option<&ActiveMiniGame>,
+    content_focused: bool,
+) {
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(area);
+
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                "Games",
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("  —  mini arcade", Style::default().fg(Color::DarkGray)),
+        ])),
+        rows[0],
+    );
+
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            "─".repeat(rows[1].width as usize),
+            Style::default().fg(Color::DarkGray),
+        )),
+        rows[1],
+    );
+
+    match active_game {
+        Some(ActiveMiniGame::Dino(session)) => draw_dino_game(f, rows[2], state, session),
+        None => draw_games_menu(f, rows[2], state, cursor, content_focused),
+    }
+
+    let hint = match active_game {
+        Some(ActiveMiniGame::Dino(session)) if session.phase == DinoGamePhase::Running => {
+            " Space/↑ jump  ·  ↓ duck/drop  ·  Enter pause  ·  q exit game"
+        }
+        Some(ActiveMiniGame::Dino(session)) if session.phase == DinoGamePhase::Paused => {
+            " Enter resume  ·  q back to games"
+        }
+        Some(ActiveMiniGame::Dino(_)) => " Space start/restart  ·  ↓ duck  ·  q back to games",
+        None if !content_focused => " → enter games  ·  ↑↓ menu",
+        None => " ↑↓ select  ·  Enter start  ·  ← back",
+    };
+    f.render_widget(
+        Paragraph::new(Span::styled(hint, Style::default().fg(Color::DarkGray))),
+        rows[3],
+    );
+}
+
+fn draw_games_menu(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    state: &SaveFile,
+    cursor: usize,
+    content_focused: bool,
+) {
+    let mut lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "Choose a mini game",
+            Style::default().fg(Color::Cyan),
+        )),
+        Line::from(""),
+    ];
+
+    for (index, game) in MINI_GAMES.iter().copied().enumerate() {
+        let selected = content_focused && index == cursor;
+        let arrow = if selected { "▶" } else { " " };
+        let style = if selected {
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Gray)
+        };
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {} ", arrow), Style::default().fg(Color::Magenta)),
+            Span::styled(game.label(), style),
+        ]));
+        lines.push(Line::from(Span::styled(
+            format!("    {}", game.description()),
+            Style::default().fg(Color::DarkGray),
+        )));
+        if matches!(game, MiniGame::DinoRun) {
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "    Record: {}  ·  Reward: 1 XP / 10s",
+                    dino::format_duration_ms(state.games.dino.best_time_ms)
+                ),
+                Style::default().fg(Color::Yellow),
+            )));
+        }
+        lines.push(Line::from(""));
+    }
+
+    f.render_widget(Paragraph::new(lines), area);
+}
+
+fn draw_dino_game(f: &mut ratatui::Frame, area: Rect, state: &SaveFile, session: &DinoGameSession) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Dino Run ")
+        .border_style(Style::default().fg(match session.phase {
+            DinoGamePhase::Running => Color::Green,
+            DinoGamePhase::Paused => Color::Yellow,
+            DinoGamePhase::Ready | DinoGamePhase::Starting => Color::Cyan,
+            DinoGamePhase::Crashed => Color::Red,
+            DinoGamePhase::Exiting => Color::DarkGray,
+        }));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(8)])
+        .split(inner);
+
+    let header = Line::from(vec![
+        Span::styled(
+            format!("Runner {}", state.active_monster().name),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("  ·  ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!("Time {}", dino::format_duration_ms(session.elapsed_ms)),
+            Style::default().fg(Color::White),
+        ),
+        Span::styled("  ·  ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!("Score {}", session.score),
+            Style::default().fg(Color::LightYellow),
+        ),
+        Span::styled("  ·  ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!(
+                "Record {}",
+                dino::format_duration_ms(state.games.dino.best_time_ms)
+            ),
+            Style::default().fg(Color::Yellow),
+        ),
+        Span::styled("  ·  ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!("Speed {:.1}", session.current_speed),
+            Style::default().fg(Color::Magenta),
+        ),
+        Span::styled("  ·  ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!("XP {}", session.xp_awarded),
+            Style::default().fg(Color::Green),
+        ),
+    ]);
+    let status = dino::status_text(state.games.dino.best_time_ms, session);
+    let header_lines = vec![
+        header,
+        Line::from(Span::styled(status, Style::default().fg(Color::DarkGray))),
+    ];
+    f.render_widget(
+        Paragraph::new(header_lines).alignment(Alignment::Center),
+        rows[0],
+    );
+
+    let world = dino::build_world(
+        state.active_monster(),
+        session,
+        rows[1].width as usize,
+        rows[1].height as usize,
+    );
+    let world_lines: Vec<Line> = world
+        .into_iter()
+        .map(|line| Line::from(Span::styled(line, Style::default().fg(Color::Magenta))))
+        .collect();
+    f.render_widget(
+        Paragraph::new(world_lines).alignment(Alignment::Center),
+        rows[1],
+    );
+}
+
+fn award_dino_xp_to_runner(
+    state: &mut SaveFile,
+    gained: u32,
+) -> (String, Option<crate::monster::Stage>) {
+    let monster = state.active_monster_mut();
+    monster.gain_xp(gained);
+    monster.last_active = Utc::now();
+    let evolved = monster.check_evolution();
+    (monster.name.clone(), evolved)
+}
+
+fn finish_dino_run(state: &mut SaveFile, flash: &mut Option<Flash>, session: &mut DinoGameSession) {
+    let Some(result) = dino::crash(session, state.games.dino.best_time_ms) else {
+        return;
+    };
+
+    if result.is_record {
+        state.games.dino.best_time_ms = result.duration_ms;
+    }
+    save::save_state(state).ok();
+
+    let record_text = if result.is_record {
+        " · new record"
+    } else {
+        ""
+    };
+    let outcome_text = match result.exit_reason {
+        crate::dino::integration::DinoExitReason::GameOver => "survived",
+    };
+    *flash = Some(Flash {
+        message: format!(
+            "Dino Run: {} {} {} · score {} · earned {} XP{}",
+            state.active_monster().name,
+            outcome_text,
+            dino::format_duration_ms(result.duration_ms),
+            result.score,
+            result.xp_awarded,
+            record_text
+        ),
+        kind: FlashKind::Info,
+        created_at: Instant::now(),
+    });
 }
 
 // ── Placeholder ───────────────────────────────────────────────────────────────

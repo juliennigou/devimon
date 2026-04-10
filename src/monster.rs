@@ -6,6 +6,13 @@ fn new_monster_id() -> String {
     Uuid::new_v4().to_string()
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum Species {
+    #[default]
+    Devimon,
+    Dragon,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Stage {
     Baby,
@@ -28,6 +35,8 @@ pub struct Monster {
     #[serde(default = "new_monster_id")]
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub species: Species,
     pub level: u32,
     pub xp: u32,
     #[serde(default)]
@@ -63,6 +72,7 @@ impl Monster {
         Self {
             id: new_monster_id(),
             name,
+            species: Species::Devimon,
             level: 1,
             xp: 0,
             total_xp: 0,
