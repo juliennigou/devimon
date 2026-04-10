@@ -138,7 +138,7 @@ document.querySelectorAll('.nav-link[href^="#"]').forEach((link) => {
 // ── Onboarding terminal animation ──────────────────────────────────────
 // Scripted sequence that loops: install → logs → launch → ASCII pet → restart
 const ONBOARD_SCRIPT = [
-  { type: "cmd",  text: "curl -fsSL https://get.devimon.dev | bash" },
+  { type: "cmd",  text: "curl -fsSL https://raw.githubusercontent.com/juliennigou/devimon/main/install.sh | bash" },
   { type: "log",  text: "  Detecting platform... macOS ARM64", cls: "log-line" },
   { type: "log",  text: "  Fetching latest release... v0.1.2", cls: "log-line" },
   { type: "log",  text: "  Downloading devimon-macos-arm64...", cls: "log-line" },
