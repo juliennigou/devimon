@@ -2,12 +2,8 @@ const translations = {
   en: {
     "nav.leaderboard": "Leaderboard",
     "nav.about": "About",
-    "hero.cmd": "cat welcome.txt",
-    "hero.cmd2": "devimon stats --global",
-    "stats.stars": "GitHub Stars",
     "stats.players": "Players",
     "stats.monsters": "Monsters",
-    "stats.version": "Version",
     "leaderboard.title":
       "┌── LEADERBOARD ──────────────────────────────────────┐",
     "leaderboard.refresh": "[↻ Refresh]",
@@ -40,12 +36,8 @@ const translations = {
   fr: {
     "nav.leaderboard": "Classement",
     "nav.about": "À propos",
-    "hero.cmd": "cat bienvenue.txt",
-    "hero.cmd2": "devimon stats --global",
-    "stats.stars": "Étoiles GitHub",
     "stats.players": "Joueurs",
     "stats.monsters": "Monstres",
-    "stats.version": "Version",
     "leaderboard.title":
       "┌── CLASSEMENT ───────────────────────────────────────┐",
     "leaderboard.refresh": "[↻ Actualiser]",
@@ -104,8 +96,7 @@ function t(key) {
 
 function initI18n() {
   const saved = localStorage.getItem("devimon-lang");
-  const browserLang = navigator.language?.startsWith("fr") ? "fr" : "en";
-  const lang = saved || browserLang;
+  const lang = saved || "en";
 
   setLanguage(lang);
 

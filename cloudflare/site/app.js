@@ -15,6 +15,7 @@ const tbody = document.querySelector("#leaderboard-body");
 const ghStarsEl = document.querySelector("#gh-stars");
 const playerCountEl = document.querySelector("#player-count");
 const monsterCountEl = document.querySelector("#monster-count");
+const terminalBody = document.querySelector("#onboarding-terminal");
 
 if (apiBaseDisplay) apiBaseDisplay.textContent = `${API_BASE}/api`;
 
@@ -49,7 +50,6 @@ function renderLeaderboard(monsters) {
     return;
   }
 
-  // Find max XP for bar scaling
   const maxXp = Math.max(...monsters.map((m) => m.total_xp || 0), 1);
 
   for (const monster of monsters) {
@@ -92,10 +92,8 @@ async function loadLeaderboard() {
     const monsters = data.monsters || [];
     renderLeaderboard(monsters);
 
-    // Update stats
     if (monsterCountEl) monsterCountEl.textContent = monsters.length;
 
-    // Estimate unique players (unique monster_id prefix or count)
     const playerSet = new Set(monsters.map((m) => m.monster_id?.split("-")[0]));
     if (playerCountEl)
       playerCountEl.textContent = playerSet.size || monsters.length;
@@ -116,7 +114,7 @@ async function loadLeaderboard() {
 async function loadGitHubStars() {
   try {
     const res = await fetch(
-      "https://api.github.com/repos/music-fam/devimon",
+      "https://api.github.com/repos/juliennigou/devimon",
       { headers: { Accept: "application/vnd.github.v3+json" } }
     );
     if (!res.ok) return;
@@ -125,18 +123,132 @@ async function loadGitHubStars() {
       ghStarsEl.textContent = data.stargazers_count.toLocaleString();
     }
   } catch {
-    // Silently fail — stars are a nice-to-have
+    // Stars are a nice-to-have
   }
 }
 
 // ── Smooth scroll for nav links ─────────────────────────────────────────
 document.querySelectorAll('.nav-link[href^="#"]').forEach((link) => {
-  link.addEventListener("click", (e) => {
+  link.addEventListener("click", () => {
     document.querySelectorAll(".nav-link").forEach((l) => l.classList.remove("active"));
     link.classList.add("active");
   });
 });
 
+// ── Onboarding terminal animation ──────────────────────────────────────
+// Scripted sequence that loops: install → logs → launch → ASCII pet → restart
+const ONBOARD_SCRIPT = [
+  { type: "cmd",  text: "cargo install devimon" },
+  { type: "log",  text: "  Updating crates.io index...", cls: "log-line" },
+  { type: "log",  text: "  Downloading devimon v0.1.2", cls: "log-line" },
+  { type: "log",  text: "  Compiling devimon v0.1.2", cls: "log-line" },
+  { type: "log",  text: "  Finished release [optimized] target", cls: "log-line log-ok" },
+  { type: "log",  text: "  Installing /usr/local/bin/devimon", cls: "log-line log-ok" },
+  { type: "pause", ms: 600 },
+  { type: "cmd",  text: "devimon spawn Kiara" },
+  { type: "log",  text: "  Spawning new monster: Kiara", cls: "log-line" },
+  { type: "log",  text: "  Species: Devimon  |  Stage: Baby  |  Level: 1", cls: "log-line log-ok" },
+  { type: "pause", ms: 400 },
+  { type: "cmd",  text: "devimon" },
+  { type: "log",  text: "  Starting TUI...", cls: "log-line" },
+  { type: "pause", ms: 300 },
+  { type: "ascii", lines: [
+    "  ┌──────────────────────────────────────┐",
+    "  │         Kiara  ♥  Lv.1  Baby         │",
+    "  │                                      │",
+    "  │            ( o_o )                    │",
+    "  │           (       )                   │",
+    "  │            \\_____/                    │",
+    "  │             /|||\\                     │",
+    "  │            d     b                    │",
+    "  │                                      │",
+    "  │  Hunger ████████░░  80%              │",
+    "  │  Energy ██████████  100%             │",
+    "  │  Mood   ████████░░  80%              │",
+    "  │                                      │",
+    "  │  [F]eed  [P]lay  [R]est  [S]ync     │",
+    "  └──────────────────────────────────────┘",
+  ]},
+  { type: "pause", ms: 2500 },
+  { type: "cmd",  text: "devimon feed Kiara" },
+  { type: "log",  text: "  You fed Kiara! Hunger → 100%  (+15 XP)", cls: "log-line log-ok" },
+  { type: "pause", ms: 800 },
+  { type: "cmd",  text: "devimon sync" },
+  { type: "log",  text: "  Syncing Kiara to cloud...", cls: "log-line" },
+  { type: "log",  text: "  ✓ Synced! Leaderboard rank: #42", cls: "log-line log-ok" },
+  { type: "pause", ms: 1500 },
+  { type: "clear" },
+];
+
+let onboardAbort = null;
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    const id = setTimeout(resolve, ms);
+    if (onboardAbort) onboardAbort.push(() => clearTimeout(id));
+  });
+}
+
+function addLine(html, cls) {
+  const div = document.createElement("div");
+  div.className = "onboard-line" + (cls ? " " + cls : "");
+  div.innerHTML = html;
+  terminalBody.appendChild(div);
+  terminalBody.scrollTop = terminalBody.scrollHeight;
+  return div;
+}
+
+async function typeText(el, text, speed) {
+  for (let i = 0; i < text.length; i++) {
+    el.textContent += text[i];
+    await sleep(speed);
+  }
+}
+
+async function runOnboarding() {
+  while (true) {
+    for (const step of ONBOARD_SCRIPT) {
+      switch (step.type) {
+        case "cmd": {
+          const line = addLine(
+            '<span class="prompt">$</span> <span class="cmd"></span><span class="cursor-blink">█</span>',
+          );
+          const cmdSpan = line.querySelector(".cmd");
+          const cursor = line.querySelector(".cursor-blink");
+          await typeText(cmdSpan, step.text, 40);
+          cursor.remove();
+          await sleep(300);
+          break;
+        }
+        case "log": {
+          addLine(escapeHtml(step.text), step.cls || "log-line");
+          await sleep(180);
+          break;
+        }
+        case "ascii": {
+          const pre = document.createElement("pre");
+          pre.className = "onboard-line ascii-inline";
+          pre.textContent = step.lines.join("\n");
+          terminalBody.appendChild(pre);
+          terminalBody.scrollTop = terminalBody.scrollHeight;
+          await sleep(100);
+          break;
+        }
+        case "pause": {
+          await sleep(step.ms);
+          break;
+        }
+        case "clear": {
+          terminalBody.replaceChildren();
+          await sleep(400);
+          break;
+        }
+      }
+    }
+  }
+}
+
 // ── Boot ─────────────────────────────────────────────────────────────────
 loadLeaderboard();
 loadGitHubStars();
+runOnboarding();
