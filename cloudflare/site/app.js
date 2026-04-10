@@ -115,7 +115,7 @@ async function loadGitHubStars() {
   try {
     const res = await fetch(
       "https://api.github.com/repos/juliennigou/devimon",
-      { headers: { Accept: "application/vnd.github.v3+json" } }
+      { headers: { Accept: "application/vnd.github.v3+json" } },
     );
     if (!res.ok) return;
     const data = await res.json();
@@ -130,7 +130,9 @@ async function loadGitHubStars() {
 // ── Smooth scroll for nav links ─────────────────────────────────────────
 document.querySelectorAll('.nav-link[href^="#"]').forEach((link) => {
   link.addEventListener("click", () => {
-    document.querySelectorAll(".nav-link").forEach((l) => l.classList.remove("active"));
+    document
+      .querySelectorAll(".nav-link")
+      .forEach((l) => l.classList.remove("active"));
     link.classList.add("active");
   });
 });
@@ -138,36 +140,54 @@ document.querySelectorAll('.nav-link[href^="#"]').forEach((link) => {
 // ── Onboarding terminal animation ──────────────────────────────────────
 // Runs once: install → spawn → launch TUI → monster escapes into the page
 const ONBOARD_SCRIPT = [
-  { type: "cmd",  text: "curl -fsSL https://raw.githubusercontent.com/juliennigou/devimon/main/install.sh | bash" },
-  { type: "log",  text: "  Detecting platform... macOS ARM64", cls: "log-line" },
-  { type: "log",  text: "  Fetching latest release... v0.1.2", cls: "log-line" },
-  { type: "log",  text: "  Downloading devimon-macos-arm64...", cls: "log-line" },
-  { type: "log",  text: "  Installing to /usr/local/bin/devimon", cls: "log-line log-ok" },
-  { type: "log",  text: "  Devimon v0.1.2 installed.", cls: "log-line log-ok" },
+  {
+    type: "cmd",
+    text: "curl -fsSL https://raw.githubusercontent.com/juliennigou/devimon/main/install.sh | bash",
+  },
+  { type: "log", text: "  Detecting platform... macOS ARM64", cls: "log-line" },
+  { type: "log", text: "  Fetching latest release... v0.1.2", cls: "log-line" },
+  {
+    type: "log",
+    text: "  Downloading devimon-macos-arm64...",
+    cls: "log-line",
+  },
+  {
+    type: "log",
+    text: "  Installing to /usr/local/bin/devimon",
+    cls: "log-line log-ok",
+  },
+  { type: "log", text: "  Devimon v0.1.2 installed.", cls: "log-line log-ok" },
   { type: "pause", ms: 500 },
-  { type: "cmd",  text: "devimon spawn Kiara" },
-  { type: "log",  text: "  Spawning new monster: Kiara", cls: "log-line" },
-  { type: "log",  text: "  Species: Devimon  |  Stage: Baby  |  Level: 1", cls: "log-line log-ok" },
+  { type: "cmd", text: "devimon spawn Kiara" },
+  { type: "log", text: "  Spawning new monster: Kiara", cls: "log-line" },
+  {
+    type: "log",
+    text: "  Species: Devimon  |  Stage: Baby  |  Level: 1",
+    cls: "log-line log-ok",
+  },
   { type: "pause", ms: 400 },
-  { type: "cmd",  text: "devimon" },
-  { type: "log",  text: "  Starting TUI...", cls: "log-line" },
+  { type: "cmd", text: "devimon" },
+  { type: "log", text: "  Starting TUI...", cls: "log-line" },
   { type: "pause", ms: 300 },
-  { type: "ascii", lines: [
-    "  ┌──────────────────────────────────────┐",
-    "  │         Kiara  ♥  Lv.1  Baby         │",
-    "  │                                      │",
-    "  │            .-^-.                     │",
-    "  │          .-( ^o^ )-.                 │",
-    "  │          /|___|\\                     │",
-    "  │          d_/ \\_b                     │",
-    "  │                                      │",
-    "  │  Hunger ████████░░  80%              │",
-    "  │  Energy ██████████  100%             │",
-    "  │  Mood   ████████░░  80%              │",
-    "  │                                      │",
-    "  │  [F]eed  [P]lay  [R]est  [S]ync     │",
-    "  └──────────────────────────────────────┘",
-  ]},
+  {
+    type: "ascii",
+    lines: [
+      "  ┌──────────────────────────────────────┐",
+      "  │         Kiara  ♥  Lv.1  Baby         │",
+      "  │                                      │",
+      "  │           .-^-.                     │",
+      "  │        .-( ^o^ )-.                  │",
+      "  │          /|___|\\                     │",
+      "  │          d_/ \\_b                     │",
+      "  │                                      │",
+      "  │  Hunger ████████░░  80%              │",
+      "  │  Energy ██████████  100%             │",
+      "  │  Mood   ████████░░  80%              │",
+      "  │                                      │",
+      "  │  [F]eed  [P]lay  [R]est  [S]ync     │",
+      "  └──────────────────────────────────────┘",
+    ],
+  },
   { type: "pause", ms: 2000 },
   { type: "escape" }, // monster breaks free
 ];
@@ -245,7 +265,9 @@ const MONSTER_FRAMES = [
 function launchWanderingMonster() {
   // Find where the terminal window is so we can start from there
   const terminalEl = document.querySelector(".terminal-window");
-  const rect = terminalEl ? terminalEl.getBoundingClientRect() : { left: 100, bottom: 200 };
+  const rect = terminalEl
+    ? terminalEl.getBoundingClientRect()
+    : { left: 100, bottom: 200 };
 
   const el = document.createElement("pre");
   el.className = "wandering-monster";
@@ -257,7 +279,7 @@ function launchWanderingMonster() {
   let y = window.scrollY + rect.bottom - 60;
 
   el.style.left = x + "px";
-  el.style.top  = y + "px";
+  el.style.top = y + "px";
 
   // Animate: smooth Lissajous wander across the full page
   let tick = 0;
@@ -267,11 +289,11 @@ function launchWanderingMonster() {
   // Target points shift over time using sine waves
   function getTarget(t) {
     const margin = 60;
-    const maxX = window.innerWidth  - margin - 120;
+    const maxX = window.innerWidth - margin - 120;
     const maxY = document.body.scrollHeight - margin - 80;
     return {
-      tx: margin + ((Math.sin(t * 0.00031) * 0.5 + 0.5) * maxX),
-      ty: margin + ((Math.cos(t * 0.00019) * 0.5 + 0.5) * maxY),
+      tx: margin + (Math.sin(t * 0.00031) * 0.5 + 0.5) * maxX,
+      ty: margin + (Math.cos(t * 0.00019) * 0.5 + 0.5) * maxY,
     };
   }
 
@@ -295,7 +317,7 @@ function launchWanderingMonster() {
     }
 
     el.style.left = Math.round(x) + "px";
-    el.style.top  = Math.round(y) + "px";
+    el.style.top = Math.round(y) + "px";
 
     // Flip horizontally based on direction
     el.style.transform = dx < 0 ? "scaleX(-1)" : "scaleX(1)";
