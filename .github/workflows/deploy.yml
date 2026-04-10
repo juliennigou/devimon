@@ -53,4 +53,4 @@ jobs:
         run: npx wrangler deploy
 
       - name: Deploy Pages site
-        run: npx wrangler pages deploy ./cloudflare/site --project-name devimon-leaderboard --branch=main
+        run: npx wrangler pages deploy ./cloudflare/site --project-name devimon --branch=main
