@@ -630,7 +630,8 @@ tbody tr:hover {
 }
 
 /* XP — data-bar style: number sits on a fill background */
-.th-xp {
+.th-xp,
+.td-xp {
     text-align: center;
 }
 
