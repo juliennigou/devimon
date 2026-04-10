@@ -138,7 +138,7 @@ devimon sync     # uploads your monster to the leaderboard
 ```
 
 The leaderboard is live at:
-- **Website:** https://leaderboard.devimon-leaderboard.pages.dev
+- **Website:** https://devimon-leaderboard.pages.dev/
 - **API:** https://devimon-api.julienigou33.workers.dev/api/leaderboard
 
 ---
