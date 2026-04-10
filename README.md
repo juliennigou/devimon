@@ -13,33 +13,33 @@ Devimon is a terminal-native virtual pet that lives in your shell. It watches yo
 
 ## Install
 
-### Option 1 — Download a pre-built binary (no Rust required)
-
-Go to [Releases](https://github.com/juliennigou/devimon/releases/latest) and download the binary for your platform:
-
-| Platform        | File                       |
-|-----------------|----------------------------|
-| macOS ARM64 (M1/M2/M3) | `devimon-macos-arm64`  |
-| macOS Intel     | `devimon-macos-x86_64`     |
-| Linux x86_64    | `devimon-linux-x86_64`     |
-| Linux ARM64     | `devimon-linux-arm64`      |
-
-Then install it:
-
-```bash
-# Example for macOS ARM64
-curl -L https://github.com/juliennigou/devimon/releases/latest/download/devimon-macos-arm64 -o devimon
-chmod +x devimon
-sudo mv devimon /usr/local/bin/
-```
-
-### Option 2 — One-line installer (requires Rust + cargo)
+### Option 1 — One-line installer (recommended, no Rust required)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/juliennigou/devimon/main/install.sh | bash
 ```
 
-This checks that `cargo` is installed, then builds and installs Devimon from source.
+The installer automatically detects your OS and architecture, downloads the right pre-built binary from GitHub Releases, and puts it in `/usr/local/bin`. No Rust needed.
+
+Supported platforms:
+
+| Platform | Binary |
+|---|---|
+| macOS ARM64 (M1/M2/M3) | `devimon-macos-arm64` |
+| macOS Intel | `devimon-macos-x86_64` |
+| Linux x86_64 | `devimon-linux-x86_64` |
+| Linux ARM64 | `devimon-linux-arm64` |
+
+If a pre-built binary isn't available for your platform and `cargo` is installed, the installer will automatically fall back to building from source.
+
+### Option 2 — Manual binary download
+
+Go to [Releases](https://github.com/juliennigou/devimon/releases/latest), download the binary for your platform, then:
+
+```bash
+chmod +x devimon-macos-arm64          # adjust filename for your platform
+sudo mv devimon-macos-arm64 /usr/local/bin/devimon
+```
 
 ### Option 3 — From source with cargo (requires Rust)
 
@@ -47,7 +47,7 @@ This checks that `cargo` is installed, then builds and installs Devimon from sou
 cargo install --git https://github.com/juliennigou/devimon --locked
 ```
 
-> **Note:** Devimon is not published on crates.io. `cargo install devimon` will not work. Use the git URL above.
+> **Note:** Devimon is not published on crates.io. `cargo install devimon` will not work — use the git URL above.
 
 ### Verify
 

@@ -1,34 +1,100 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="https://github.com/juliennigou/devimon"
+REPO="juliennigou/devimon"
+BIN_NAME="devimon"
+INSTALL_DIR="/usr/local/bin"
 
-if ! command -v cargo >/dev/null 2>&1; then
-  cat <<'EOF'
-error: cargo is not installed.
+# ── Detect OS + arch ────────────────────────────────────────────────────
+OS="$(uname -s)"
+ARCH="$(uname -m)"
 
-Install Rust first:
-  https://rustup.rs/
+case "${OS}" in
+  Darwin)
+    case "${ARCH}" in
+      arm64)  ASSET="devimon-macos-arm64" ;;
+      x86_64) ASSET="devimon-macos-x86_64" ;;
+      *)
+        echo "error: unsupported macOS architecture: ${ARCH}" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  Linux)
+    case "${ARCH}" in
+      x86_64)  ASSET="devimon-linux-x86_64" ;;
+      aarch64) ASSET="devimon-linux-arm64" ;;
+      *)
+        echo "error: unsupported Linux architecture: ${ARCH}" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  *)
+    echo "error: unsupported operating system: ${OS}" >&2
+    echo "       On Windows, download the binary manually from:" >&2
+    echo "       https://github.com/${REPO}/releases/latest" >&2
+    exit 1
+    ;;
+esac
 
-Then run this installer again.
-EOF
+# ── Resolve latest release tag ──────────────────────────────────────────
+echo "Fetching latest release..."
+TAG=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
+  | grep '"tag_name"' \
+  | head -1 \
+  | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+
+if [ -z "${TAG}" ]; then
+  echo "error: could not determine latest release tag" >&2
   exit 1
 fi
 
-echo "Installing Devimon from ${REPO_URL}..."
-cargo install --git "${REPO_URL}" --locked --force
+DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
 
-BIN_PATH="${HOME}/.cargo/bin/devimon"
+# ── Download ─────────────────────────────────────────────────────────────
+TMP_FILE="$(mktemp)"
+trap 'rm -f "${TMP_FILE}"' EXIT
 
-cat <<EOF
+echo "Downloading ${ASSET} (${TAG})..."
+if ! curl -fsSL "${DOWNLOAD_URL}" -o "${TMP_FILE}"; then
+  echo "" >&2
+  echo "error: download failed." >&2
+  echo "       URL tried: ${DOWNLOAD_URL}" >&2
 
-Devimon installed.
+  # ── Fallback: build from source if cargo is available ─────────────────
+  if command -v cargo >/dev/null 2>&1; then
+    echo ""
+    echo "Falling back to building from source with cargo..."
+    cargo install --git "https://github.com/${REPO}" --locked --force
+    echo ""
+    echo "Devimon installed via cargo."
+    echo "Binary: ${HOME}/.cargo/bin/${BIN_NAME}"
+    echo ""
+    echo "Make sure ~/.cargo/bin is in your PATH:"
+    echo "  export PATH=\"\$HOME/.cargo/bin:\$PATH\""
+    exit 0
+  fi
 
-Binary:
-  ${BIN_PATH}
+  echo "" >&2
+  echo "No cargo found either. Please download manually:" >&2
+  echo "  https://github.com/${REPO}/releases/latest" >&2
+  exit 1
+fi
 
-Try:
-  devimon --help
-  devimon
-  devimon login
-EOF
+chmod +x "${TMP_FILE}"
+
+# ── Install ───────────────────────────────────────────────────────────────
+if [ -w "${INSTALL_DIR}" ]; then
+  mv "${TMP_FILE}" "${INSTALL_DIR}/${BIN_NAME}"
+else
+  echo "Installing to ${INSTALL_DIR} (sudo required)..."
+  sudo mv "${TMP_FILE}" "${INSTALL_DIR}/${BIN_NAME}"
+fi
+
+echo ""
+echo "Devimon ${TAG} installed to ${INSTALL_DIR}/${BIN_NAME}"
+echo ""
+echo "Get started:"
+echo "  devimon spawn Devi"
+echo "  devimon"

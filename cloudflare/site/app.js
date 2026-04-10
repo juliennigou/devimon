@@ -138,12 +138,12 @@ document.querySelectorAll('.nav-link[href^="#"]').forEach((link) => {
 // ── Onboarding terminal animation ──────────────────────────────────────
 // Scripted sequence that loops: install → logs → launch → ASCII pet → restart
 const ONBOARD_SCRIPT = [
-  { type: "cmd",  text: "cargo install devimon" },
-  { type: "log",  text: "  Updating crates.io index...", cls: "log-line" },
-  { type: "log",  text: "  Downloading devimon v0.1.2", cls: "log-line" },
-  { type: "log",  text: "  Compiling devimon v0.1.2", cls: "log-line" },
-  { type: "log",  text: "  Finished release [optimized] target", cls: "log-line log-ok" },
-  { type: "log",  text: "  Installing /usr/local/bin/devimon", cls: "log-line log-ok" },
+  { type: "cmd",  text: "curl -fsSL https://get.devimon.dev | bash" },
+  { type: "log",  text: "  Detecting platform... macOS ARM64", cls: "log-line" },
+  { type: "log",  text: "  Fetching latest release... v0.1.2", cls: "log-line" },
+  { type: "log",  text: "  Downloading devimon-macos-arm64...", cls: "log-line" },
+  { type: "log",  text: "  Installing to /usr/local/bin/devimon", cls: "log-line log-ok" },
+  { type: "log",  text: "  Devimon v0.1.2 installed.", cls: "log-line log-ok" },
   { type: "pause", ms: 600 },
   { type: "cmd",  text: "devimon spawn Kiara" },
   { type: "log",  text: "  Spawning new monster: Kiara", cls: "log-line" },
