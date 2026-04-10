@@ -56,22 +56,26 @@ function renderLeaderboard(monsters) {
     const rank = rankDisplay(monster.rank);
     const sClass = stageClass(monster.stage);
     const xpPct = Math.round(((monster.total_xp || 0) / maxXp) * 100);
+    const art = stageAscii(monster.stage);
+    const ghUser = monster.github_username
+      ? `<a class="gh-user" href="https://github.com/${escapeHtml(monster.github_username)}" target="_blank" rel="noopener">@${escapeHtml(monster.github_username)}</a>`
+      : "";
     const row = document.createElement("tr");
     row.style.animationDelay = `${monster.rank * 0.04}s`;
     row.innerHTML = `
       <td class="rank-cell ${rank.cls}">${rank.text}</td>
+      <td class="art-cell"><span class="stage-art">${art}</span></td>
       <td>
         <div class="monster-cell">
           <span class="monster-name">${escapeHtml(monster.name)}</span>
-          <span class="monster-id">${escapeHtml(monster.monster_id)}</span>
+          ${ghUser}
         </div>
       </td>
       <td><span class="stage-pill ${sClass}">${escapeHtml(monster.stage)}</span></td>
-      <td>${monster.level}</td>
-      <td>
-        <div class="xp-cell">
+      <td class="td-center">${monster.level}</td>
+      <td class="td-xp">
+        <div class="xp-bar-bg" style="--xp-pct:${xpPct}%">
           <span class="xp-number">${(monster.total_xp || 0).toLocaleString()}</span>
-          <div class="xp-bar-track"><div class="xp-bar-fill" style="width:${xpPct}%"></div></div>
         </div>
       </td>
       <td><span class="time-ago">${timeAgo(monster.last_active_at)}</span></td>

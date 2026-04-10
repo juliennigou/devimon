@@ -532,9 +532,11 @@ async function handleLeaderboard(request, env) {
     : 20;
 
   const rows = await env.DB.prepare(
-    `SELECT monster_id, name, level, total_xp, stage, updated_at, last_active_at
-       FROM monsters
-      ORDER BY total_xp DESC, level DESC, updated_at DESC
+    `SELECT m.monster_id, m.name, m.level, m.total_xp, m.stage,
+            m.updated_at, m.last_active_at, a.username
+       FROM monsters m
+       JOIN accounts a ON m.account_id = a.account_id
+      ORDER BY m.total_xp DESC, m.level DESC, m.updated_at DESC
       LIMIT ?`
   )
     .bind(limit)
@@ -544,6 +546,7 @@ async function handleLeaderboard(request, env) {
     rank: index + 1,
     monster_id: row.monster_id,
     name: row.name,
+    github_username: row.username,
     level: Number(row.level),
     total_xp: Number(row.total_xp),
     stage: row.stage,
