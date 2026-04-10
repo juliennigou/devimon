@@ -274,13 +274,28 @@ fn devimon_evolved_walk(monster: &Monster, tick: u64) -> Vec<String> {
     }
 }
 
-fn dragon_small_art(_monster: &Monster) -> Vec<String> {
-    vec![
-        "   /\\_/\\\\ ".to_string(),
-        "  ( `-' )".to_string(),
-        "  /|_ _|\\".to_string(),
-        "   c   b ".to_string(),
-    ]
+fn dragon_small_art(monster: &Monster) -> Vec<String> {
+    let face = dragon_face(monster, monster.stage == Stage::Evolved);
+    match monster.stage {
+        Stage::Baby => vec![
+            "   /^v^\\ ".to_string(),
+            format!("  ( {} )", face),
+            "  /|_-|\\".to_string(),
+            "   c  b ".to_string(),
+        ],
+        Stage::Young => vec![
+            "   /\\_/\\\\ ".to_string(),
+            format!("  ( {} )", face),
+            "  /|_^_|\\ ".to_string(),
+            "   c   b  ".to_string(),
+        ],
+        Stage::Evolved => vec![
+            "  /\\_/\\\\_ ".to_string(),
+            format!(" <( {} )>", face),
+            "  /|_^_|\\ ".to_string(),
+            "  c_/ \\_b ".to_string(),
+        ],
+    }
 }
 
 fn dragon_scene(monster: &Monster, ctx: AnimationContext) -> SpriteScene {
@@ -289,9 +304,19 @@ fn dragon_scene(monster: &Monster, ctx: AnimationContext) -> SpriteScene {
         MoodState::Proud | MoodState::Fine => AnimationState::Fly,
     };
 
-    let lines = match state {
-        AnimationState::Fly => dragon_flight_sprite(ctx.tick),
-        _ => dragon_perch_sprite(ctx.tick),
+    let lines = match monster.stage {
+        Stage::Baby => match state {
+            AnimationState::Fly => dragon_baby_flight_sprite(monster, ctx.tick),
+            _ => dragon_baby_perch_sprite(monster, ctx.tick),
+        },
+        Stage::Young => match state {
+            AnimationState::Fly => dragon_young_flight_sprite(monster, ctx.tick),
+            _ => dragon_young_perch_sprite(monster, ctx.tick),
+        },
+        Stage::Evolved => match state {
+            AnimationState::Fly => dragon_evolved_flight_sprite(monster, ctx.tick),
+            _ => dragon_evolved_perch_sprite(monster, ctx.tick),
+        },
     };
     let (sprite_w, sprite_h) = sprite_size(&lines);
     let (x, y) = match state {
@@ -300,41 +325,113 @@ fn dragon_scene(monster: &Monster, ctx: AnimationContext) -> SpriteScene {
         AnimationState::Walk => wander_motion(ctx, sprite_w, sprite_h, 0.16, 0.10),
     };
 
-    let _ = monster;
     SpriteScene { lines, x, y }
 }
 
-fn dragon_perch_sprite(tick: u64) -> Vec<String> {
-    let eyes = if is_blinking(tick, 19) { "-.-" } else { "`-'" };
+fn dragon_baby_perch_sprite(monster: &Monster, tick: u64) -> Vec<String> {
+    let face = dragon_face(monster, false);
     let belly = if (tick / 5).is_multiple_of(2) {
-        "   /|_ _|\\"
+        "    /|_-|\\"
+    } else {
+        "    /|_~|\\"
+    };
+    vec![
+        "      /^v^\\".to_string(),
+        format!("   .( {} ).", face),
+        belly.to_string(),
+        "     /  ^  \\".to_string(),
+        "     c_/ \\_b".to_string(),
+    ]
+}
+
+fn dragon_baby_flight_sprite(monster: &Monster, tick: u64) -> Vec<String> {
+    let wings_up = (tick / 2).is_multiple_of(2);
+    let face = dragon_face(monster, false);
+    if wings_up {
+        vec![
+            r"       __/\__".to_string(),
+            format!("  .--<( {} )>--.", face),
+            r"      /|_~_|\ ".to_string(),
+            r"      c_/ \_b".to_string(),
+        ]
+    } else {
+        vec![
+            r"      _/\/\_ ".to_string(),
+            format!("  .-<( {} )>-.", face),
+            r"     /|_-_|\ ".to_string(),
+            r"      c_/ \_b".to_string(),
+        ]
+    }
+}
+
+fn dragon_young_perch_sprite(monster: &Monster, tick: u64) -> Vec<String> {
+    let face = dragon_face(monster, false);
+    let belly = if (tick / 5).is_multiple_of(2) {
+        "   /|_^_|\\"
     } else {
         "   /|_-_|\\"
     };
     vec![
         "     /\\_/\\\\ ".to_string(),
-        format!("   .( {} ).", eyes),
+        format!("   .( {} ).", face),
         belly.to_string(),
         "    /  ^  \\".to_string(),
         "    c_/ \\_b".to_string(),
     ]
 }
 
-fn dragon_flight_sprite(tick: u64) -> Vec<String> {
+fn dragon_young_flight_sprite(monster: &Monster, tick: u64) -> Vec<String> {
     let wings_up = (tick / 2).is_multiple_of(2);
+    let face = dragon_face(monster, false);
     if wings_up {
         vec![
             r"        __/\__".to_string(),
-            r"   .--<( `-' )>--.".to_string(),
+            format!("   .--<( {} )>--.", face),
             r"      /|/^\|\ ".to_string(),
             r"     c_/   \_b".to_string(),
         ]
     } else {
         vec![
             r"      __/\/\__".to_string(),
-            r"  .--<( `-' )>--.".to_string(),
+            format!("  .--<( {} )>--.", face),
             r"      /|/^\|\ ".to_string(),
             r"     c_/   \_b".to_string(),
+        ]
+    }
+}
+
+fn dragon_evolved_perch_sprite(monster: &Monster, tick: u64) -> Vec<String> {
+    let face = dragon_face(monster, true);
+    let chest = if (tick / 5).is_multiple_of(2) {
+        "   /|_^_^|\\"
+    } else {
+        "   /|_^-_|\\"
+    };
+    vec![
+        "      /\\_/\\\\_ ".to_string(),
+        format!("   .-<( {} )>-.", face),
+        chest.to_string(),
+        "    / / ^ \\ \\".to_string(),
+        "    c_/   \\_b".to_string(),
+    ]
+}
+
+fn dragon_evolved_flight_sprite(monster: &Monster, tick: u64) -> Vec<String> {
+    let wings_up = (tick / 2).is_multiple_of(2);
+    let face = dragon_face(monster, true);
+    if wings_up {
+        vec![
+            r"       __/\  /\__".to_string(),
+            format!("  .--<< ( {} ) >>--.", face),
+            r"       /|/^^\|\ ".to_string(),
+            r"      c_/    \_b".to_string(),
+        ]
+    } else {
+        vec![
+            r"     __/\/\__/\/\__".to_string(),
+            format!(" .--<< ( {} ) >>--.", face),
+            r"      /|/^^\|\ ".to_string(),
+            r"     c_/    \_b".to_string(),
         ]
     }
 }
@@ -345,127 +442,392 @@ fn devimon_game_sprite(monster: &Monster, pose: GameSpritePose) -> Vec<String> {
         _ => devimon_face(monster, 0, false),
     };
 
-    let lines = match pose {
+    let lines = match monster.stage {
+        Stage::Baby => devimon_baby_game_sprite(face, pose),
+        Stage::Young => devimon_young_game_sprite(face, pose),
+        Stage::Evolved => devimon_evolved_game_sprite(face, pose),
+    };
+    pad_sprite(lines, 11, 5)
+}
+
+fn dragon_game_sprite(monster: &Monster, pose: GameSpritePose) -> Vec<String> {
+    let face = match monster.stage {
+        Stage::Evolved => dragon_face(monster, true),
+        _ => dragon_face(monster, false),
+    };
+
+    let lines = match monster.stage {
+        Stage::Baby => dragon_baby_game_sprite(face, pose),
+        Stage::Young => dragon_young_game_sprite(face, pose),
+        Stage::Evolved => dragon_evolved_game_sprite(face, pose),
+    };
+    pad_sprite(lines, 11, 5)
+}
+
+fn devimon_baby_game_sprite(face: &str, pose: GameSpritePose) -> Vec<String> {
+    match pose {
         GameSpritePose::Waiting => vec![
-            "   /^^\\   ".to_string(),
-            format!("  ( {} )  ", face),
-            "  /|___|\\ ".to_string(),
-            "   / | \\  ".to_string(),
-            "  d_/ \\_b ".to_string(),
+            "   .-^.    ".to_string(),
+            format!("  ( {} )   ", face),
+            "   /|_|\\   ".to_string(),
+            "   / | \\   ".to_string(),
+            "  d_/ \\_b  ".to_string(),
         ],
         GameSpritePose::Jump => vec![
-            "   /^^\\   ".to_string(),
-            format!("  ( {} )  ", face),
-            "  /|___|\\ ".to_string(),
-            "   /   \\  ".to_string(),
-            "  _/   \\_ ".to_string(),
+            "   .-^.    ".to_string(),
+            format!("  ( {} )   ", face),
+            "   /|_|\\   ".to_string(),
+            "    / \\    ".to_string(),
+            "   _/ \\_   ".to_string(),
         ],
         GameSpritePose::Fall => vec![
-            "   /^^\\   ".to_string(),
-            format!("  ( {} )  ", face),
-            "  /|___|\\ ".to_string(),
-            "   /   \\  ".to_string(),
-            "  d_   _b ".to_string(),
+            "   .-^.    ".to_string(),
+            format!("  ( {} )   ", face),
+            "   /|_|\\   ".to_string(),
+            "    / \\    ".to_string(),
+            "   d_ _b   ".to_string(),
         ],
         GameSpritePose::DuckA => vec![
-            "          ".to_string(),
+            "           ".to_string(),
+            format!("  .( {} )_ ", face),
+            " _/|_| __\\ ".to_string(),
+            " d______b  ".to_string(),
+            "           ".to_string(),
+        ],
+        GameSpritePose::DuckB => vec![
+            "           ".to_string(),
+            format!(" _.( {} )  ", face),
+            "/__ |_|\\_  ".to_string(),
+            " b______d  ".to_string(),
+            "           ".to_string(),
+        ],
+        GameSpritePose::Crashed => vec![
+            "   .-^.    ".to_string(),
+            "  ( x_x )  ".to_string(),
+            "   /|_|\\   ".to_string(),
+            "    / \\    ".to_string(),
+            "   d_ _b   ".to_string(),
+        ],
+        GameSpritePose::RunB => vec![
+            "   .-^.    ".to_string(),
+            format!("  ( {} )   ", face),
+            "   /|_|\\   ".to_string(),
+            "    / \\    ".to_string(),
+            "   d_/\\_b  ".to_string(),
+        ],
+        GameSpritePose::RunA => vec![
+            "   .-^.    ".to_string(),
+            format!("  ( {} )   ", face),
+            "   /|_|\\   ".to_string(),
+            "    / \\    ".to_string(),
+            "   b_/\\_d  ".to_string(),
+        ],
+    }
+}
+
+fn devimon_young_game_sprite(face: &str, pose: GameSpritePose) -> Vec<String> {
+    match pose {
+        GameSpritePose::Waiting => vec![
+            "   /^^\\    ".to_string(),
+            format!("  ( {} )   ", face),
+            "  /|___|\\  ".to_string(),
+            "   / | \\   ".to_string(),
+            "  d_/ \\_b  ".to_string(),
+        ],
+        GameSpritePose::Jump => vec![
+            "   /^^\\    ".to_string(),
+            format!("  ( {} )   ", face),
+            "  /|___|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  _/   \\_  ".to_string(),
+        ],
+        GameSpritePose::Fall => vec![
+            "   /^^\\    ".to_string(),
+            format!("  ( {} )   ", face),
+            "  /|___|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  d_   _b  ".to_string(),
+        ],
+        GameSpritePose::DuckA => vec![
+            "           ".to_string(),
             format!("  ( {} )__ ", face),
             " _/|___ __\\".to_string(),
             " d_______b ".to_string(),
-            "          ".to_string(),
+            "           ".to_string(),
         ],
         GameSpritePose::DuckB => vec![
-            "          ".to_string(),
+            "           ".to_string(),
             format!(" __( {} )  ", face),
             "/__ ___|\\_ ".to_string(),
             " b_______d ".to_string(),
-            "          ".to_string(),
+            "           ".to_string(),
         ],
         GameSpritePose::Crashed => vec![
-            "   /^^\\   ".to_string(),
-            "  ( x_x ) ".to_string(),
-            "  /|___|\\ ".to_string(),
-            "   /   \\  ".to_string(),
-            "  d_   _b ".to_string(),
+            "   /^^\\    ".to_string(),
+            "  ( x_x )  ".to_string(),
+            "  /|___|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  d_   _b  ".to_string(),
         ],
         GameSpritePose::RunB => vec![
-            "   /^^\\   ".to_string(),
-            format!("  ( {} )  ", face),
-            "  /|___|\\ ".to_string(),
-            "   /   \\  ".to_string(),
-            "  d_/ \\_b ".to_string(),
+            "   /^^\\    ".to_string(),
+            format!("  ( {} )   ", face),
+            "  /|___|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  d_/ \\_b  ".to_string(),
         ],
         GameSpritePose::RunA => vec![
-            "   /^^\\   ".to_string(),
-            format!("  ( {} )  ", face),
-            "  /|___|\\ ".to_string(),
-            "   /   \\  ".to_string(),
-            "  b_/ \\_d ".to_string(),
+            "   /^^\\    ".to_string(),
+            format!("  ( {} )   ", face),
+            "  /|___|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  b_/ \\_d  ".to_string(),
         ],
-    };
-    pad_sprite(lines, 10, 5)
+    }
 }
 
-fn dragon_game_sprite(_monster: &Monster, pose: GameSpritePose) -> Vec<String> {
-    let lines = match pose {
+fn devimon_evolved_game_sprite(face: &str, pose: GameSpritePose) -> Vec<String> {
+    match pose {
         GameSpritePose::Waiting => vec![
-            "   /\\_/\\  ".to_string(),
-            "  ( `-' ) ".to_string(),
-            "  /|_^_|\\ ".to_string(),
-            "   / | \\  ".to_string(),
-            "  c_/ \\_b ".to_string(),
+            "  __/\\\\__  ".to_string(),
+            format!(" <( {} )> ", face),
+            "  /|___|\\  ".to_string(),
+            "  / / \\ \\  ".to_string(),
+            " d_/   \\_b ".to_string(),
         ],
         GameSpritePose::Jump => vec![
-            "   /\\_/\\  ".to_string(),
-            "  ( `-' ) ".to_string(),
-            "  /|_^_|\\ ".to_string(),
-            "   /   \\  ".to_string(),
-            "  _c   b_ ".to_string(),
+            "  __/\\\\__  ".to_string(),
+            format!(" <( {} )> ", face),
+            "  /|___|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  _/   \\_  ".to_string(),
         ],
         GameSpritePose::Fall => vec![
-            "   /\\_/\\  ".to_string(),
-            "  ( `-' ) ".to_string(),
-            "  /|_^_|\\ ".to_string(),
-            "   /   \\  ".to_string(),
-            "  c_   _b ".to_string(),
+            "  __/\\\\__  ".to_string(),
+            format!(" <( {} )> ", face),
+            "  /|___|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  d_   _b  ".to_string(),
         ],
         GameSpritePose::DuckA => vec![
-            "          ".to_string(),
-            "  ( `-' )_".to_string(),
-            " _/|_^|__\\".to_string(),
-            " c_______b".to_string(),
-            "          ".to_string(),
+            "           ".to_string(),
+            format!(" <( {} )__ ", face),
+            " _/|___ __\\".to_string(),
+            " d=_____ =b".to_string(),
+            "           ".to_string(),
         ],
         GameSpritePose::DuckB => vec![
-            "          ".to_string(),
-            "_( `-' )  ".to_string(),
-            "/__|^_|\\_ ".to_string(),
-            " b_______c".to_string(),
-            "          ".to_string(),
+            "           ".to_string(),
+            format!(" __<( {} )> ", face),
+            "/__ ___|\\_ ".to_string(),
+            " b=_____ =d".to_string(),
+            "           ".to_string(),
         ],
         GameSpritePose::Crashed => vec![
-            "   /\\_/\\  ".to_string(),
-            "  ( x_x ) ".to_string(),
-            "  /|_^_|\\ ".to_string(),
-            "   /   \\  ".to_string(),
-            "  c_   _b ".to_string(),
+            "  __/\\\\__  ".to_string(),
+            " <( x_x )> ".to_string(),
+            "  /|___|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  d_   _b  ".to_string(),
         ],
         GameSpritePose::RunB => vec![
-            "   /\\_/\\  ".to_string(),
-            "  ( `-' ) ".to_string(),
-            "  /|_^_|\\ ".to_string(),
-            "   /   \\  ".to_string(),
-            "  c_/ \\_b ".to_string(),
+            "  __/\\\\__  ".to_string(),
+            format!(" <( {} )> ", face),
+            "  /|___|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  d_/ \\_b  ".to_string(),
         ],
         GameSpritePose::RunA => vec![
-            "   /\\_/\\  ".to_string(),
-            "  ( `-' ) ".to_string(),
-            "  /|_^_|\\ ".to_string(),
-            "   /   \\  ".to_string(),
-            "  b_/ \\_c ".to_string(),
+            "  __/\\\\__  ".to_string(),
+            format!(" <( {} )> ", face),
+            "  /|___|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  b_/ \\_d  ".to_string(),
         ],
-    };
-    pad_sprite(lines, 10, 5)
+    }
+}
+
+fn dragon_baby_game_sprite(face: &str, pose: GameSpritePose) -> Vec<String> {
+    match pose {
+        GameSpritePose::Waiting => vec![
+            "   /^v^\\   ".to_string(),
+            format!("  ( {} )  ", face),
+            "  /|_-_|\\  ".to_string(),
+            "   / | \\   ".to_string(),
+            "  c_/ \\_b  ".to_string(),
+        ],
+        GameSpritePose::Jump => vec![
+            "   /^v^\\   ".to_string(),
+            format!("  ( {} )  ", face),
+            "  /|_-_|\\  ".to_string(),
+            "    / \\    ".to_string(),
+            "   _c b_   ".to_string(),
+        ],
+        GameSpritePose::Fall => vec![
+            "   /^v^\\   ".to_string(),
+            format!("  ( {} )  ", face),
+            "  /|_-_|\\  ".to_string(),
+            "    / \\    ".to_string(),
+            "   c_ _b   ".to_string(),
+        ],
+        GameSpritePose::DuckA => vec![
+            "           ".to_string(),
+            format!("  ( {} )_ ", face),
+            " _/|_-|__\\ ".to_string(),
+            " c______b  ".to_string(),
+            "           ".to_string(),
+        ],
+        GameSpritePose::DuckB => vec![
+            "           ".to_string(),
+            format!(" _( {} )  ", face),
+            "/__|-_|\\_  ".to_string(),
+            " b______c  ".to_string(),
+            "           ".to_string(),
+        ],
+        GameSpritePose::Crashed => vec![
+            "   /^v^\\   ".to_string(),
+            "  ( x_x )  ".to_string(),
+            "  /|_-_|\\  ".to_string(),
+            "    / \\    ".to_string(),
+            "   c_ _b   ".to_string(),
+        ],
+        GameSpritePose::RunB => vec![
+            "   /^v^\\   ".to_string(),
+            format!("  ( {} )  ", face),
+            "  /|_-_|\\  ".to_string(),
+            "    / \\    ".to_string(),
+            "   c_/\\_b  ".to_string(),
+        ],
+        GameSpritePose::RunA => vec![
+            "   /^v^\\   ".to_string(),
+            format!("  ( {} )  ", face),
+            "  /|_-_|\\  ".to_string(),
+            "    / \\    ".to_string(),
+            "   b_/\\_c  ".to_string(),
+        ],
+    }
+}
+
+fn dragon_young_game_sprite(face: &str, pose: GameSpritePose) -> Vec<String> {
+    match pose {
+        GameSpritePose::Waiting => vec![
+            "   /\\_/\\   ".to_string(),
+            format!("  ( {} )  ", face),
+            "  /|_^_|\\  ".to_string(),
+            "   / | \\   ".to_string(),
+            "  c_/ \\_b  ".to_string(),
+        ],
+        GameSpritePose::Jump => vec![
+            "   /\\_/\\   ".to_string(),
+            format!("  ( {} )  ", face),
+            "  /|_^_|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  _c   b_  ".to_string(),
+        ],
+        GameSpritePose::Fall => vec![
+            "   /\\_/\\   ".to_string(),
+            format!("  ( {} )  ", face),
+            "  /|_^_|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  c_   _b  ".to_string(),
+        ],
+        GameSpritePose::DuckA => vec![
+            "           ".to_string(),
+            format!("  ( {} )_ ", face),
+            " _/|_^|__\\ ".to_string(),
+            " c_______b ".to_string(),
+            "           ".to_string(),
+        ],
+        GameSpritePose::DuckB => vec![
+            "           ".to_string(),
+            format!(" _( {} )  ", face),
+            "/__|^_|\\_  ".to_string(),
+            " b_______c ".to_string(),
+            "           ".to_string(),
+        ],
+        GameSpritePose::Crashed => vec![
+            "   /\\_/\\   ".to_string(),
+            "  ( x_x )  ".to_string(),
+            "  /|_^_|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  c_   _b  ".to_string(),
+        ],
+        GameSpritePose::RunB => vec![
+            "   /\\_/\\   ".to_string(),
+            format!("  ( {} )  ", face),
+            "  /|_^_|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  c_/ \\_b  ".to_string(),
+        ],
+        GameSpritePose::RunA => vec![
+            "   /\\_/\\   ".to_string(),
+            format!("  ( {} )  ", face),
+            "  /|_^_|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  b_/ \\_c  ".to_string(),
+        ],
+    }
+}
+
+fn dragon_evolved_game_sprite(face: &str, pose: GameSpritePose) -> Vec<String> {
+    match pose {
+        GameSpritePose::Waiting => vec![
+            "  /\\_/\\\\_  ".to_string(),
+            format!(" <( {} )> ", face),
+            "  /|_^_|\\  ".to_string(),
+            "  / / \\ \\  ".to_string(),
+            " c_/   \\_b ".to_string(),
+        ],
+        GameSpritePose::Jump => vec![
+            "  /\\_/\\\\_  ".to_string(),
+            format!(" <( {} )> ", face),
+            "  /|_^_|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  _c   b_  ".to_string(),
+        ],
+        GameSpritePose::Fall => vec![
+            "  /\\_/\\\\_  ".to_string(),
+            format!(" <( {} )> ", face),
+            "  /|_^_|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  c_   _b  ".to_string(),
+        ],
+        GameSpritePose::DuckA => vec![
+            "           ".to_string(),
+            format!(" <( {} )_ ", face),
+            " _/|_^|__\\ ".to_string(),
+            " c=_____ =b".to_string(),
+            "           ".to_string(),
+        ],
+        GameSpritePose::DuckB => vec![
+            "           ".to_string(),
+            format!(" _<( {} )> ", face),
+            "/__|^_|\\_  ".to_string(),
+            " b=_____ =c".to_string(),
+            "           ".to_string(),
+        ],
+        GameSpritePose::Crashed => vec![
+            "  /\\_/\\\\_  ".to_string(),
+            " <( x_x )> ".to_string(),
+            "  /|_^_|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  c_   _b  ".to_string(),
+        ],
+        GameSpritePose::RunB => vec![
+            "  /\\_/\\\\_  ".to_string(),
+            format!(" <( {} )> ", face),
+            "  /|_^_|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  c_/ \\_b  ".to_string(),
+        ],
+        GameSpritePose::RunA => vec![
+            "  /\\_/\\\\_  ".to_string(),
+            format!(" <( {} )> ", face),
+            "  /|_^_|\\  ".to_string(),
+            "   /   \\   ".to_string(),
+            "  b_/ \\_c  ".to_string(),
+        ],
+    }
 }
 
 fn devimon_face(monster: &Monster, tick: u64, fierce: bool) -> &'static str {
@@ -486,6 +848,24 @@ fn devimon_face(monster: &Monster, tick: u64, fierce: bool) -> &'static str {
         "-_-"
     } else {
         ";_;"
+    }
+}
+
+fn dragon_face(monster: &Monster, fierce: bool) -> &'static str {
+    if fierce {
+        if monster.mood >= 70.0 {
+            "O-O"
+        } else if monster.mood >= 35.0 {
+            "`-'"
+        } else {
+            "x-x"
+        }
+    } else if monster.mood >= 70.0 {
+        "`o'"
+    } else if monster.mood >= 35.0 {
+        "`-'"
+    } else {
+        ";-;"
     }
 }
 

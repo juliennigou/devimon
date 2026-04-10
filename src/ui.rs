@@ -38,7 +38,6 @@ enum MenuTab {
     Home,
     Collection,
     Games,
-    Account,
     Team,
     Settings,
 }
@@ -49,7 +48,6 @@ impl MenuTab {
             MenuTab::Home => "Home",
             MenuTab::Collection => "Collection",
             MenuTab::Games => "Games",
-            MenuTab::Account => "Account",
             MenuTab::Team => "Team",
             MenuTab::Settings => "Settings",
         }
@@ -60,10 +58,30 @@ const MENU_ITEMS: &[MenuTab] = &[
     MenuTab::Home,
     MenuTab::Collection,
     MenuTab::Games,
-    MenuTab::Account,
     MenuTab::Team,
     MenuTab::Settings,
 ];
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SettingsAction {
+    Disconnect,
+}
+
+impl SettingsAction {
+    fn label(self) -> &'static str {
+        match self {
+            SettingsAction::Disconnect => "Disconnect GitHub",
+        }
+    }
+
+    fn description(self) -> &'static str {
+        match self {
+            SettingsAction::Disconnect => "Clear the local cloud session on this device.",
+        }
+    }
+}
+
+const SETTINGS_ACTIONS: &[SettingsAction] = &[SettingsAction::Disconnect];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum MiniGame {
@@ -111,9 +129,12 @@ enum AppState {
         selected_tab: MenuTab,
         collection_cursor: usize,
         games_cursor: usize,
+        settings_cursor: usize,
         active_game: Option<ActiveMiniGame>,
         /// true = ↑↓ navigate content panel; false = ↑↓ navigate sidebar
         content_focused: bool,
+        settings_logout_confirm: bool,
+        settings_logout_choice: usize,
         animation_tick: u64,
     },
     Quit,
@@ -239,8 +260,11 @@ fn initial_state() -> io::Result<AppState> {
                     selected_tab: MenuTab::Home,
                     collection_cursor: 0,
                     games_cursor: 0,
+                    settings_cursor: 0,
                     active_game: None,
                     content_focused: false,
+                    settings_logout_confirm: false,
+                    settings_logout_choice: 0,
                     animation_tick: 0,
                 })
             }
@@ -281,8 +305,11 @@ fn tick(app: &mut AppState) -> io::Result<()> {
                         selected_tab: MenuTab::Home,
                         collection_cursor: 0,
                         games_cursor: 0,
+                        settings_cursor: 0,
                         active_game: None,
                         content_focused: false,
+                        settings_logout_confirm: false,
+                        settings_logout_choice: 0,
                         animation_tick: 0,
                     };
                 }
@@ -299,8 +326,11 @@ fn tick(app: &mut AppState) -> io::Result<()> {
                         selected_tab: MenuTab::Home,
                         collection_cursor: 0,
                         games_cursor: 0,
+                        settings_cursor: 0,
                         active_game: None,
                         content_focused: false,
+                        settings_logout_confirm: false,
+                        settings_logout_choice: 0,
                         animation_tick: 0,
                     };
                 }
@@ -458,8 +488,11 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> io::Result<()> {
                             selected_tab: MenuTab::Home,
                             collection_cursor: 0,
                             games_cursor: 0,
+                            settings_cursor: 0,
                             active_game: None,
                             content_focused: false,
+                            settings_logout_confirm: false,
+                            settings_logout_choice: 0,
                             animation_tick: 0,
                         };
                     }
@@ -474,8 +507,11 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> io::Result<()> {
                     selected_tab: MenuTab::Home,
                     collection_cursor: 0,
                     games_cursor: 0,
+                    settings_cursor: 0,
                     active_game: None,
                     content_focused: false,
+                    settings_logout_confirm: false,
+                    settings_logout_choice: 0,
                     animation_tick: 0,
                 };
             }
@@ -498,8 +534,11 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> io::Result<()> {
                     selected_tab: MenuTab::Home,
                     collection_cursor: 0,
                     games_cursor: 0,
+                    settings_cursor: 0,
                     active_game: None,
                     content_focused: false,
+                    settings_logout_confirm: false,
+                    settings_logout_choice: 0,
                     animation_tick: 0,
                 };
             }
@@ -533,8 +572,11 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> io::Result<()> {
             selected_tab,
             collection_cursor,
             games_cursor,
+            settings_cursor,
             active_game,
             content_focused,
+            settings_logout_confirm,
+            settings_logout_choice,
             ..
         } => match code {
             KeyCode::Char('q') | KeyCode::Esc
@@ -581,7 +623,10 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> io::Result<()> {
             }
             _ if key.kind == KeyEventKind::Release => {}
             KeyCode::Char('q') | KeyCode::Esc => {
-                if *content_focused {
+                if *settings_logout_confirm {
+                    *settings_logout_confirm = false;
+                    *settings_logout_choice = 0;
+                } else if *content_focused {
                     *content_focused = false;
                 } else {
                     persist_and_quit(app)
@@ -599,6 +644,9 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> io::Result<()> {
                     *selected_tab = MENU_ITEMS[idx - 1];
                     *collection_cursor = 0;
                     *games_cursor = 0;
+                    *settings_cursor = 0;
+                    *settings_logout_confirm = false;
+                    *settings_logout_choice = 0;
                 }
             }
             KeyCode::Down if !*content_focused => {
@@ -610,18 +658,29 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> io::Result<()> {
                     *selected_tab = MENU_ITEMS[idx + 1];
                     *collection_cursor = 0;
                     *games_cursor = 0;
+                    *settings_cursor = 0;
+                    *settings_logout_confirm = false;
+                    *settings_logout_choice = 0;
                 }
             }
             // → enters content panel (only on tabs that have interactive content)
             KeyCode::Right
                 if !*content_focused
-                    && matches!(*selected_tab, MenuTab::Collection | MenuTab::Games) =>
+                    && matches!(
+                        *selected_tab,
+                        MenuTab::Collection | MenuTab::Games | MenuTab::Settings
+                    ) =>
             {
                 *content_focused = true;
             }
             // ← exits content panel back to sidebar
             KeyCode::Left if *content_focused && active_game.is_none() => {
-                *content_focused = false;
+                if *settings_logout_confirm {
+                    *settings_logout_confirm = false;
+                    *settings_logout_choice = 0;
+                } else {
+                    *content_focused = false;
+                }
             }
             // ↑↓ in content mode → navigate collection items
             KeyCode::Up if *content_focused && *selected_tab == MenuTab::Collection => {
@@ -646,6 +705,24 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> io::Result<()> {
             {
                 if *games_cursor + 1 < MINI_GAMES.len() {
                     *games_cursor += 1;
+                }
+            }
+            KeyCode::Up if *content_focused && *selected_tab == MenuTab::Settings => {
+                if *settings_logout_confirm {
+                    if *settings_logout_choice > 0 {
+                        *settings_logout_choice -= 1;
+                    }
+                } else if *settings_cursor > 0 {
+                    *settings_cursor -= 1;
+                }
+            }
+            KeyCode::Down if *content_focused && *selected_tab == MenuTab::Settings => {
+                if *settings_logout_confirm {
+                    if *settings_logout_choice < 1 {
+                        *settings_logout_choice += 1;
+                    }
+                } else if *settings_cursor + 1 < SETTINGS_ACTIONS.len() {
+                    *settings_cursor += 1;
                 }
             }
             KeyCode::Enter if *content_focused && *selected_tab == MenuTab::Collection => {
@@ -684,6 +761,39 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> io::Result<()> {
                         }
                         None => None,
                     };
+                }
+            }
+            KeyCode::Enter if *content_focused && *selected_tab == MenuTab::Settings => {
+                if *settings_logout_confirm {
+                    if *settings_logout_choice == 0 {
+                        *settings_logout_confirm = false;
+                    } else {
+                        let username = state
+                            .cloud
+                            .account
+                            .as_ref()
+                            .map(|account| account.username.clone());
+                        save::clear_session(state);
+                        save::save_state(state).ok();
+                        *last_sync_attempt = Instant::now() - SYNC_RATE;
+                        *settings_logout_confirm = false;
+                        *settings_logout_choice = 0;
+                        *flash = Some(Flash {
+                            message: match username {
+                                Some(username) => format!("Disconnected @{}.", username),
+                                None => "No active GitHub session.".to_string(),
+                            },
+                            kind: FlashKind::Info,
+                            created_at: Instant::now(),
+                        });
+                    }
+                } else if matches!(
+                    SETTINGS_ACTIONS.get(*settings_cursor),
+                    Some(SettingsAction::Disconnect)
+                ) && state.cloud.account.is_some()
+                {
+                    *settings_logout_confirm = true;
+                    *settings_logout_choice = 0;
                 }
             }
 
@@ -873,8 +983,11 @@ fn draw(f: &mut ratatui::Frame, app: &AppState) {
             selected_tab,
             collection_cursor,
             games_cursor,
+            settings_cursor,
             active_game,
             content_focused,
+            settings_logout_confirm,
+            settings_logout_choice,
             animation_tick,
             ..
         } => draw_running(
@@ -885,8 +998,11 @@ fn draw(f: &mut ratatui::Frame, app: &AppState) {
             *selected_tab,
             *collection_cursor,
             *games_cursor,
+            *settings_cursor,
             active_game.as_ref(),
             *content_focused,
+            *settings_logout_confirm,
+            *settings_logout_choice,
             *animation_tick,
         ),
         AppState::Quit => {}
@@ -903,8 +1019,11 @@ fn draw_running(
     selected_tab: MenuTab,
     collection_cursor: usize,
     games_cursor: usize,
+    settings_cursor: usize,
     active_game: Option<&ActiveMiniGame>,
     content_focused: bool,
+    settings_logout_confirm: bool,
+    settings_logout_choice: usize,
     animation_tick: u64,
 ) {
     let cols = Layout::default()
@@ -921,8 +1040,11 @@ fn draw_running(
         selected_tab,
         collection_cursor,
         games_cursor,
+        settings_cursor,
         active_game,
         content_focused,
+        settings_logout_confirm,
+        settings_logout_choice,
         animation_tick,
     );
 }
@@ -1042,8 +1164,11 @@ fn draw_content(
     selected_tab: MenuTab,
     collection_cursor: usize,
     games_cursor: usize,
+    settings_cursor: usize,
     active_game: Option<&ActiveMiniGame>,
     content_focused: bool,
+    settings_logout_confirm: bool,
+    settings_logout_choice: usize,
     animation_tick: u64,
 ) {
     match selected_tab {
@@ -1052,6 +1177,15 @@ fn draw_content(
             draw_collection(f, area, state, collection_cursor, flash, content_focused)
         }
         MenuTab::Games => draw_games(f, area, state, games_cursor, active_game, content_focused),
+        MenuTab::Settings => draw_settings(
+            f,
+            area,
+            state,
+            settings_cursor,
+            content_focused,
+            settings_logout_confirm,
+            settings_logout_choice,
+        ),
         tab => draw_coming_soon(f, area, tab),
     }
 }
@@ -1690,6 +1824,255 @@ fn draw_dino_game(f: &mut ratatui::Frame, area: Rect, state: &SaveFile, session:
     );
 }
 
+fn draw_settings(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    state: &SaveFile,
+    cursor: usize,
+    content_focused: bool,
+    logout_confirm: bool,
+    logout_choice: usize,
+) {
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(7),
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(area);
+
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                "Settings",
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "  —  profile & device",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ])),
+        rows[0],
+    );
+
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            "─".repeat(rows[1].width as usize),
+            Style::default().fg(Color::DarkGray),
+        )),
+        rows[1],
+    );
+
+    let account = state.cloud.account.as_ref();
+    let profile_lines = if let Some(account) = account {
+        vec![
+            Line::from(vec![
+                Span::styled("GitHub", Style::default().fg(Color::DarkGray)),
+                Span::styled("  ·  ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("@{}", account.username),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(Span::styled(
+                format!("Profile  https://github.com/{}", account.username),
+                Style::default().fg(Color::White),
+            )),
+            Line::from(Span::styled(
+                format!("Account ID  {}", account.account_id),
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(Span::styled(
+                format!("Device ID   {}", state.cloud.device_id),
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(Span::styled(
+                if state.cloud.sync_dirty {
+                    "Cloud state  sync pending"
+                } else {
+                    "Cloud state  synced"
+                },
+                Style::default().fg(Color::Yellow),
+            )),
+        ]
+    } else {
+        vec![
+            Line::from(Span::styled(
+                "GitHub  ·  disconnected",
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(Span::styled(
+                "Profile  connect from the startup login flow",
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(Span::styled(
+                format!("Device ID   {}", state.cloud.device_id),
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(""),
+            Line::from(""),
+        ]
+    };
+    f.render_widget(Paragraph::new(profile_lines), rows[2]);
+
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            "Actions",
+            Style::default().fg(Color::DarkGray),
+        )),
+        rows[3],
+    );
+
+    let mut action_lines = Vec::new();
+    for (index, action) in SETTINGS_ACTIONS.iter().copied().enumerate() {
+        let selected = content_focused && !logout_confirm && index == cursor;
+        let enabled = account.is_some();
+        let arrow = if selected { "▶" } else { " " };
+        let label_style = if enabled {
+            if selected {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            }
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        action_lines.push(Line::from(vec![
+            Span::styled(format!(" {} ", arrow), Style::default().fg(Color::Magenta)),
+            Span::styled(action.label(), label_style),
+        ]));
+        action_lines.push(Line::from(Span::styled(
+            format!("    {}", action.description()),
+            Style::default().fg(Color::DarkGray),
+        )));
+        if !enabled {
+            action_lines.push(Line::from(Span::styled(
+                "    No active GitHub session.",
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+        action_lines.push(Line::from(""));
+    }
+    f.render_widget(Paragraph::new(action_lines), rows[4]);
+
+    let hint = if logout_confirm {
+        " ↑↓ choose  ·  Enter confirm  ·  Esc cancel"
+    } else if !content_focused {
+        " → enter settings  ·  ↑↓ menu"
+    } else {
+        " ↑↓ select  ·  Enter open  ·  ← back"
+    };
+    f.render_widget(
+        Paragraph::new(Span::styled(hint, Style::default().fg(Color::DarkGray))),
+        rows[5],
+    );
+
+    if logout_confirm {
+        draw_logout_confirm_modal(f, area, account.map(|a| a.username.as_str()), logout_choice);
+    }
+}
+
+fn draw_logout_confirm_modal(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    username: Option<&str>,
+    choice: usize,
+) {
+    let rect = center_rect_with_size(area, 44, 8);
+    f.render_widget(Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Confirm Disconnect ")
+        .border_style(Style::default().fg(Color::Yellow));
+    let inner = block.inner(rect);
+    f.render_widget(block, rect);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
+        .split(inner);
+
+    let prompt = match username {
+        Some(username) => format!("Disconnect @{} on this device?", username),
+        None => "Disconnect the current GitHub session?".to_string(),
+    };
+    f.render_widget(
+        Paragraph::new(vec![
+            Line::from(Span::styled(
+                prompt,
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                "This only clears the local session.",
+                Style::default().fg(Color::DarkGray),
+            )),
+        ])
+        .alignment(Alignment::Center),
+        rows[0],
+    );
+
+    let cancel_style = if choice == 0 {
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Gray)
+    };
+    let disconnect_style = if choice == 1 {
+        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                "▶ ",
+                Style::default().fg(if choice == 0 {
+                    Color::Magenta
+                } else {
+                    Color::DarkGray
+                }),
+            ),
+            Span::styled("Cancel", cancel_style),
+        ]))
+        .alignment(Alignment::Center),
+        rows[1],
+    );
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                "▶ ",
+                Style::default().fg(if choice == 1 {
+                    Color::Magenta
+                } else {
+                    Color::DarkGray
+                }),
+            ),
+            Span::styled("Disconnect", disconnect_style),
+        ]))
+        .alignment(Alignment::Center),
+        rows[2],
+    );
+}
+
 fn award_dino_xp_to_runner(
     state: &mut SaveFile,
     gained: u32,
@@ -1953,6 +2336,17 @@ fn center_rect(area: Rect, percent: u16) -> Rect {
             Constraint::Percentage(margin),
         ])
         .split(area)[1]
+}
+
+fn center_rect_with_size(area: Rect, width: u16, height: u16) -> Rect {
+    let width = width.min(area.width);
+    let height = height.min(area.height);
+    Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    }
 }
 
 fn render_xp_gauge(f: &mut ratatui::Frame, area: Rect, monster: &Monster) {

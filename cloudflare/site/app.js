@@ -149,7 +149,7 @@ const ONBOARD_SCRIPT = [
     text: "curl -fsSL https://raw.githubusercontent.com/juliennigou/devimon/main/install.sh | bash",
   },
   { type: "log", text: "  Detecting platform... macOS ARM64", cls: "log-line" },
-  { type: "log", text: "  Fetching latest release... v0.1.3", cls: "log-line" },
+  { type: "log", text: "  Fetching latest release... v0.1.4", cls: "log-line" },
   {
     type: "log",
     text: "  Downloading devimon-macos-arm64...",
@@ -160,7 +160,7 @@ const ONBOARD_SCRIPT = [
     text: "  Installing to /usr/local/bin/devimon",
     cls: "log-line log-ok",
   },
-  { type: "log", text: "  Devimon v0.1.3 installed.", cls: "log-line log-ok" },
+  { type: "log", text: "  Devimon v0.1.4 installed.", cls: "log-line log-ok" },
   { type: "pause", ms: 500 },
   { type: "cmd", text: "devimon spawn Kiara" },
   { type: "log", text: "  Spawning new monster: Kiara", cls: "log-line" },
