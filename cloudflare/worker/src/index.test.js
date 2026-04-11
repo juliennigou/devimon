@@ -3,8 +3,11 @@ import assert from "node:assert/strict";
 
 import {
   computeAcceptedRankedProgression,
+  extractBearerToken,
   evaluateSuspiciousSync,
   maxXpGainSince,
+  normalizeSeverity,
+  parseSuspiciousSyncQuery,
   progressionFromTotalXp,
   stageForLevel,
 } from "./index.js";
@@ -104,4 +107,26 @@ test("suspicious sync flags capped and implausible ranked bursts", () => {
       severity: "high",
     },
   ]);
+});
+
+test("extractBearerToken parses bearer auth safely", () => {
+  assert.equal(extractBearerToken("Bearer secret-token"), "secret-token");
+  assert.equal(extractBearerToken("Basic abc"), null);
+  assert.equal(extractBearerToken(null), null);
+});
+
+test("parseSuspiciousSyncQuery normalizes filters and caps limit", () => {
+  const request = {
+    url: "https://example.com/api/admin/suspicious-syncs?limit=999&account_id=acc_123&severity=HIGH",
+  };
+
+  assert.deepEqual(parseSuspiciousSyncQuery(request), {
+    limit: 100,
+    accountId: "acc_123",
+    severity: "high",
+  });
+});
+
+test("normalizeSeverity rejects unsupported values", () => {
+  assert.throws(() => normalizeSeverity("critical"), /severity must be one of: warn, high/);
 });

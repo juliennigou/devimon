@@ -67,8 +67,16 @@ Commit:
 Commits:
 
 - `7996b96` `feat: sync ranked xp as coding evidence`
+- `bac0fed` `feat(worker): log suspicious ranked syncs`
+
+### Milestone 7
+
+- Added a lightweight admin/debug endpoint for recent suspicious syncs.
+- Protected the endpoint with `ADMIN_DEBUG_TOKEN`.
+- Added query filters for `limit`, `account_id`, and `severity`.
+- Added worker tests around the admin query and auth helpers.
 
 Pending next:
 
-- expose suspicious-sync visibility to operators or admin tooling
+- document or script the admin/debug access flow for operators
 - stop using client-declared level/stage as ranked inputs entirely

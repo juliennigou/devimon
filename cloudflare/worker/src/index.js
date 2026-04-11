@@ -55,6 +55,11 @@ export default {
         return await handleLeaderboard(request, env);
       }
 
+      if (pathname === "/api/admin/suspicious-syncs" && request.method === "GET") {
+        requireAdminToken(request, env);
+        return await handleAdminSuspiciousSyncs(request, env);
+      }
+
       return json({ error: "not_found" }, 404);
     } catch (error) {
       if (error instanceof HttpError) {
@@ -94,6 +99,26 @@ function requireEnv(env, key) {
   return env[key];
 }
 
+function requireAdminToken(request, env) {
+  const expectedToken = requireEnv(env, "ADMIN_DEBUG_TOKEN");
+  const providedToken =
+    request.headers.get("x-admin-token") ||
+    extractBearerToken(request.headers.get("authorization"));
+
+  if (!providedToken || providedToken !== expectedToken) {
+    throw new HttpError(401, "invalid admin token");
+  }
+}
+
+function extractBearerToken(authHeader) {
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = authHeader.slice("Bearer ".length).trim();
+  return token || null;
+}
+
 async function readJson(request) {
   try {
     return await request.json();
@@ -103,12 +128,7 @@ async function readJson(request) {
 }
 
 async function requireSession(request, env) {
-  const auth = request.headers.get("authorization");
-  if (!auth || !auth.startsWith("Bearer ")) {
-    throw new HttpError(401, "missing bearer token");
-  }
-
-  const token = auth.slice("Bearer ".length).trim();
+  const token = extractBearerToken(request.headers.get("authorization"));
   if (!token) {
     throw new HttpError(401, "missing bearer token");
   }
@@ -794,6 +814,88 @@ async function handleLeaderboard(request, env) {
   });
 }
 
+async function handleAdminSuspiciousSyncs(request, env) {
+  await ensureSuspiciousSyncsTable(env);
+
+  const { limit, accountId, severity } = parseSuspiciousSyncQuery(request);
+  let sql = `SELECT id, account_id, monster_id, device_id, reason, severity,
+                    requested_ranked_xp_delta, accepted_ranked_xp_delta,
+                    max_accepted_ranked_xp_delta, trusted_total_xp_after,
+                    detected_at
+               FROM suspicious_syncs`;
+  const clauses = [];
+  const bindings = [];
+
+  if (accountId) {
+    clauses.push("account_id = ?");
+    bindings.push(accountId);
+  }
+  if (severity) {
+    clauses.push("severity = ?");
+    bindings.push(severity);
+  }
+  if (clauses.length > 0) {
+    sql += ` WHERE ${clauses.join(" AND ")}`;
+  }
+  sql += " ORDER BY detected_at DESC LIMIT ?";
+  bindings.push(limit);
+
+  const rows = await env.DB.prepare(sql).bind(...bindings).all();
+  const suspiciousSyncs = (rows.results || []).map((row) => ({
+    id: row.id,
+    account_id: row.account_id,
+    monster_id: row.monster_id,
+    device_id: row.device_id,
+    reason: row.reason,
+    severity: row.severity,
+    requested_ranked_xp_delta: Number(row.requested_ranked_xp_delta),
+    accepted_ranked_xp_delta: Number(row.accepted_ranked_xp_delta),
+    max_accepted_ranked_xp_delta: Number(row.max_accepted_ranked_xp_delta),
+    trusted_total_xp_after: Number(row.trusted_total_xp_after),
+    detected_at: row.detected_at,
+  }));
+
+  return json({
+    generated_at: nowIso(),
+    filters: {
+      limit,
+      account_id: accountId,
+      severity,
+    },
+    suspicious_syncs: suspiciousSyncs,
+  });
+}
+
+function parseSuspiciousSyncQuery(request) {
+  const url = new URL(request.url);
+  const requestedLimit = Number(url.searchParams.get("limit") || 20);
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.min(Math.max(Math.floor(requestedLimit), 1), 100)
+    : 20;
+
+  const accountId = url.searchParams.get("account_id")?.trim() || null;
+  const severity = normalizeSeverity(url.searchParams.get("severity"));
+
+  return {
+    limit,
+    accountId,
+    severity,
+  };
+}
+
+function normalizeSeverity(value) {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "warn" || normalized === "high") {
+    return normalized;
+  }
+
+  throw new HttpError(400, "severity must be one of: warn, high");
+}
+
 async function ensureRankedMonsterColumns(env) {
   const result = await env.DB.prepare("PRAGMA table_info(monsters)").all();
   const existingColumns = new Set((result.results || []).map((column) => column.name));
@@ -870,9 +972,13 @@ async function persistSuspiciousSyncs(
 
 export {
   computeAcceptedRankedProgression,
+  extractBearerToken,
   evaluateSuspiciousSync,
   maxXpGainSince,
+  normalizeSeverity,
+  parseSuspiciousSyncQuery,
   progressionFromTotalXp,
+  requireAdminToken,
   stageForLevel,
   totalXpForLevel,
 };
