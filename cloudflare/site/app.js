@@ -125,14 +125,14 @@ async function copyInstallCommand() {
 
 renderInstallPanel();
 
-// Defer slider init to a fresh task so layout is always fully flushed,
-// regardless of module execution timing or readyState.
+// Defer slider init so layout is flushed before we read offsetLeft/offsetWidth.
+// The slider starts at width:0 in CSS (invisible), JS snaps it to the right
+// size without transition, then re-enables transition for subsequent clicks.
 setTimeout(() => {
   const slider = document.querySelector(".toggle-slider");
   if (!slider) return;
   slider.classList.add("toggle-slider--no-transition");
   updateToggleSlider();
-  slider.classList.add("toggle-slider--visible");
   requestAnimationFrame(() => slider.classList.remove("toggle-slider--no-transition"));
 }, 0);
 
