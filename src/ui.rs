@@ -2374,10 +2374,7 @@ fn draw_startup_choice(
                     .add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
-            Line::from(Span::styled(
-                subline,
-                Style::default().fg(Color::Cyan),
-            )),
+            Line::from(Span::styled(subline, Style::default().fg(Color::Cyan))),
             Line::from(""),
             Line::from(vec![
                 Span::styled(" l ", Style::default().bg(Color::DarkGray).fg(Color::Cyan)),
@@ -2508,8 +2505,7 @@ fn draw_onboarding_intro(f: &mut ratatui::Frame, area: Rect, animation_tick: u64
     ]);
 
     f.render_widget(
-        Paragraph::new(lines)
-        .alignment(Alignment::Center),
+        Paragraph::new(lines).alignment(Alignment::Center),
         chunks[1],
     );
 }
@@ -2675,7 +2671,10 @@ fn draw_onboarding_name(
         ])
         .split(chunks[1]);
 
-    f.render_widget(Paragraph::new(egg_lines).alignment(Alignment::Center), rows[0]);
+    f.render_widget(
+        Paragraph::new(egg_lines).alignment(Alignment::Center),
+        rows[0],
+    );
     f.render_widget(
         Paragraph::new(Span::styled(
             format!("{} egg selected", starter_species_name(species)),
@@ -2812,7 +2811,10 @@ fn draw_onboarding_confirm(
         ])
         .split(inner);
 
-    f.render_widget(Paragraph::new(preview_art).alignment(Alignment::Center), rows[0]);
+    f.render_widget(
+        Paragraph::new(preview_art).alignment(Alignment::Center),
+        rows[0],
+    );
     f.render_widget(
         Paragraph::new(vec![
             Line::from(Span::styled(
