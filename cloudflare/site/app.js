@@ -94,7 +94,6 @@ function renderInstallPanel() {
   installModeButtons.forEach((button) => {
     button.classList.toggle("active", button.dataset.installMode === currentInstallMode);
   });
-  updateToggleSlider();
 }
 
 function fallbackCopyText(text) {
@@ -126,24 +125,16 @@ async function copyInstallCommand() {
 
 renderInstallPanel();
 
-function initToggleSlider() {
+// Defer slider init to a fresh task so layout is always fully flushed,
+// regardless of module execution timing or readyState.
+setTimeout(() => {
   const slider = document.querySelector(".toggle-slider");
   if (!slider) return;
-  // Snap into position without transition, then reveal
   slider.classList.add("toggle-slider--no-transition");
   updateToggleSlider();
   slider.classList.add("toggle-slider--visible");
-  // Re-enable transition on next frame so subsequent clicks animate
   requestAnimationFrame(() => slider.classList.remove("toggle-slider--no-transition"));
-}
-
-// Module scripts are deferred — on fast/cached loads the 'load' event may have
-// already fired before this listener is registered. Guard against that.
-if (document.readyState === "complete") {
-  initToggleSlider();
-} else {
-  window.addEventListener("load", initToggleSlider);
-}
+}, 0);
 
 if (installCopyButton) {
   installCopyButton.addEventListener("click", () => {
@@ -168,6 +159,7 @@ installModeButtons.forEach((button) => {
   button.addEventListener("click", () => {
     currentInstallMode = button.dataset.installMode || "auto";
     renderInstallPanel();
+    updateToggleSlider();
     restartOnboarding();
   });
 });
