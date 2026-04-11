@@ -18,15 +18,23 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             asset_name: devimon-macos-arm64
+            binary_name: devimon
           - os: macos-latest
             target: x86_64-apple-darwin
             asset_name: devimon-macos-x86_64
+            binary_name: devimon
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             asset_name: devimon-linux-x86_64
+            binary_name: devimon
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             asset_name: devimon-linux-arm64
+            binary_name: devimon
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset_name: devimon-windows-x86_64.exe
+            binary_name: devimon.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -48,11 +56,17 @@ jobs:
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
 
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" "dist/${{ matrix.asset_name }}"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset_name }}
-          path: target/${{ matrix.target }}/release/devimon
+          path: dist/${{ matrix.asset_name }}
 
   release:
     name: Publish release
@@ -71,8 +85,11 @@ jobs:
           mkdir -p release-assets
           for dir in artifacts/*/; do
             name=$(basename "$dir")
-            cp "$dir/devimon" "release-assets/$name"
-            chmod +x "release-assets/$name"
+            cp "$dir/$name" "release-assets/$name"
+            case "$name" in
+              *.exe) ;;
+              *) chmod +x "release-assets/$name" ;;
+            esac
           done
 
       - name: Create GitHub Release
