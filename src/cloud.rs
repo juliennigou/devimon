@@ -92,6 +92,10 @@ pub struct SyncResponse {
     pub trusted_stage: Option<Stage>,
     #[serde(default)]
     pub accepted_xp_delta: Option<u32>,
+    #[serde(default)]
+    pub requested_xp_delta: Option<u32>,
+    #[serde(default)]
+    pub max_accepted_xp_delta: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -216,6 +220,8 @@ pub fn sync_state(state: &mut SaveFile) -> Result<SyncResponse, String> {
     state.cloud.trusted_stage = sync.trusted_stage;
     state.cloud.leaderboard_rank = sync.leaderboard_rank;
     state.cloud.last_accepted_xp_delta = sync.accepted_xp_delta;
+    state.cloud.last_requested_xp_delta = sync.requested_xp_delta;
+    state.cloud.last_max_accepted_xp_delta = sync.max_accepted_xp_delta;
     state.cloud.sync_dirty = false;
     Ok(sync)
 }

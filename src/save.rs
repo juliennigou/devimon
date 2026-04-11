@@ -34,6 +34,10 @@ pub struct CloudState {
     #[serde(default)]
     pub last_accepted_xp_delta: Option<u32>,
     #[serde(default)]
+    pub last_requested_xp_delta: Option<u32>,
+    #[serde(default)]
+    pub last_max_accepted_xp_delta: Option<u32>,
+    #[serde(default)]
     pub sync_dirty: bool,
 }
 
@@ -49,6 +53,8 @@ impl Default for CloudState {
             trusted_stage: None,
             leaderboard_rank: None,
             last_accepted_xp_delta: None,
+            last_requested_xp_delta: None,
+            last_max_accepted_xp_delta: None,
             sync_dirty: false,
         }
     }
@@ -295,6 +301,8 @@ pub fn clear_session(state: &mut SaveFile) {
     state.cloud.trusted_stage = None;
     state.cloud.leaderboard_rank = None;
     state.cloud.last_accepted_xp_delta = None;
+    state.cloud.last_requested_xp_delta = None;
+    state.cloud.last_max_accepted_xp_delta = None;
     state.cloud.sync_dirty = false;
 }
 

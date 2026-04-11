@@ -1104,8 +1104,14 @@ fn maybe_sync(
                         (None, None) => "☁️ Sync ok".to_string(),
                     },
                 };
+                let capped_message = match (sync.requested_xp_delta, sync.accepted_xp_delta) {
+                    (Some(requested), Some(accepted)) if requested > accepted => {
+                        format!("{} · capped from +{} XP", message, requested)
+                    }
+                    _ => message,
+                };
                 *flash = Some(Flash {
-                    message,
+                    message: capped_message,
                     kind: FlashKind::Info,
                     created_at: Instant::now(),
                 });
@@ -2199,6 +2205,22 @@ fn draw_settings(
                 },
                 Style::default().fg(Color::DarkGray),
             )),
+            Line::from(Span::styled(
+                match (
+                    state.cloud.last_requested_xp_delta,
+                    state.cloud.last_accepted_xp_delta,
+                ) {
+                    (Some(requested), Some(accepted)) if requested > accepted => format!(
+                        "Last sync cap  requested +{} XP  ·  accepted +{} XP",
+                        requested, accepted
+                    ),
+                    (Some(_), Some(accepted)) => {
+                        format!("Last sync accept  +{} trusted XP", accepted)
+                    }
+                    _ => "Last sync accept  waiting for first sync".to_string(),
+                },
+                Style::default().fg(Color::DarkGray),
+            )),
         ]
     } else {
         vec![
@@ -2214,6 +2236,7 @@ fn draw_settings(
                 format!("Device ID   {}", state.cloud.device_id),
                 Style::default().fg(Color::DarkGray),
             )),
+            Line::from(""),
             Line::from(""),
             Line::from(""),
             Line::from(""),

@@ -541,6 +541,8 @@ async function handleSync(request, env, session) {
     trusted_level: rankedProgression.level,
     trusted_stage: rankedProgression.stage,
     accepted_xp_delta: rankedProgression.acceptedDelta,
+    requested_xp_delta: rankedProgression.requestedDelta,
+    max_accepted_xp_delta: rankedProgression.maxAcceptedDelta,
   });
 }
 

@@ -149,6 +149,18 @@ fn print_sync_status(sync: &SyncResponse) {
             format!("Accepted by server on this sync: +{} XP", accepted).bright_black()
         );
     }
+    if let (Some(requested), Some(accepted)) = (sync.requested_xp_delta, sync.accepted_xp_delta) {
+        if requested > accepted {
+            println!(
+                "  {}",
+                format!(
+                    "Server capped ranked XP from +{} to +{} on this sync",
+                    requested, accepted
+                )
+                .yellow()
+            );
+        }
+    }
 }
 
 fn maybe_sync_after_local_change(state: &mut SaveFile) {
@@ -242,6 +254,21 @@ fn cmd_status() -> Result<(), String> {
         }
         if let Some(rank) = state.cloud.leaderboard_rank {
             println!("  {}", format!("Trusted rank: #{}", rank).bright_black());
+        }
+        if let (Some(requested), Some(accepted)) = (
+            state.cloud.last_requested_xp_delta,
+            state.cloud.last_accepted_xp_delta,
+        ) {
+            if requested > accepted {
+                println!(
+                    "  {}",
+                    format!(
+                        "Last sync was capped: local +{} XP, trusted +{}",
+                        requested, accepted
+                    )
+                    .yellow()
+                );
+            }
         }
     }
     println!();
@@ -402,6 +429,17 @@ fn cmd_whoami() -> Result<(), String> {
     }
     if let Some(rank) = state.cloud.leaderboard_rank {
         println!("  Trusted Rank: #{}", rank);
+    }
+    if let (Some(requested), Some(accepted)) = (
+        state.cloud.last_requested_xp_delta,
+        state.cloud.last_accepted_xp_delta,
+    ) {
+        if requested > accepted {
+            println!(
+                "  Last Sync Cap: requested +{} XP, accepted +{} XP",
+                requested, accepted
+            );
+        }
     }
     Ok(())
 }
