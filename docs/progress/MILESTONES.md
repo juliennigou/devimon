@@ -83,7 +83,16 @@ Commits:
 - Ranked progression remains derived exclusively from trusted `ranked_xp_delta` evidence.
 - Added worker tests proving profile snapshot inconsistency no longer affects ranked trust.
 
+Commit:
+
+- `5f3f196` `refactor(worker): decouple ranked truth from profile snapshot`
+
+### Milestone 9
+
+- Documented the admin/debug suspicious-sync workflow for operators.
+- Added the required `ADMIN_DEBUG_TOKEN` secret to the Cloudflare README.
+- Added a dedicated operator note with request examples, filters, and reason meanings.
+
 Pending next:
 
-- document or script the admin/debug access flow for operators
 - consider trimming the client snapshot itself down to profile-only fields

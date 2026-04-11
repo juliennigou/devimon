@@ -19,6 +19,7 @@ Set these in the Worker before deployment:
 
 - `GITHUB_CLIENT_ID`
 - `GITHUB_CLIENT_SECRET`
+- `ADMIN_DEBUG_TOKEN` for the admin/debug suspicious-sync endpoint
 
 ### Initial D1 setup
 
@@ -41,6 +42,16 @@ npx wrangler dev
 ```
 
 The Rust client defaults to `http://127.0.0.1:8787`, which matches local Worker development.
+
+### Admin/debug endpoint
+
+The Worker exposes a lightweight read-only debug endpoint for suspicious ranked syncs:
+
+- `GET /api/admin/suspicious-syncs`
+
+It is protected by `ADMIN_DEBUG_TOKEN`.
+
+Full operator usage is documented in [docs/ops/ADMIN_DEBUG.md](/Users/juliennigou/devimon/docs/ops/ADMIN_DEBUG.md).
 
 ## GitHub OAuth
 
