@@ -34,7 +34,7 @@ If a pre-built binary isn't available for your platform and `cargo` is installed
 
 ### Option 2 — Manual binary download
 
-Go to [Releases](https://github.com/juliennigou/devimon/releases/latest), download the `v0.1.5` binary for your platform, then:
+Go to [Releases](https://github.com/juliennigou/devimon/releases/latest), download the `v0.1.6` binary for your platform, then:
 
 ```bash
 chmod +x devimon-macos-arm64          # adjust filename for your platform
@@ -194,8 +194,8 @@ The GitHub OAuth secrets (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`) live in th
 **Releases** are triggered by pushing a version tag:
 
 ```bash
-git tag v0.1.5
-git push origin v0.1.5
+git tag v0.1.6
+git push origin v0.1.6
 ```
 
 This builds binaries for macOS ARM64/x86_64, Linux x86_64/ARM64 and publishes them as a GitHub Release.
