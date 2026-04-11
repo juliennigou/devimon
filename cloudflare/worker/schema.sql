@@ -67,6 +67,24 @@ CREATE TABLE IF NOT EXISTS sync_history (
   FOREIGN KEY (device_id) REFERENCES devices(device_id)
 );
 
+CREATE TABLE IF NOT EXISTS suspicious_syncs (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  monster_id TEXT,
+  device_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  requested_ranked_xp_delta INTEGER NOT NULL,
+  accepted_ranked_xp_delta INTEGER NOT NULL,
+  max_accepted_ranked_xp_delta INTEGER NOT NULL,
+  trusted_total_xp_after INTEGER NOT NULL,
+  payload_json TEXT NOT NULL,
+  detected_at TEXT NOT NULL,
+  FOREIGN KEY (account_id) REFERENCES accounts(account_id),
+  FOREIGN KEY (monster_id) REFERENCES monsters(monster_id),
+  FOREIGN KEY (device_id) REFERENCES devices(device_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_monsters_total_xp
   ON monsters (total_xp DESC, level DESC, updated_at DESC);
 
@@ -75,3 +93,6 @@ CREATE INDEX IF NOT EXISTS idx_monsters_ranked_total_xp
 
 CREATE INDEX IF NOT EXISTS idx_sessions_account
   ON sessions (account_id);
+
+CREATE INDEX IF NOT EXISTS idx_suspicious_syncs_account_detected
+  ON suspicious_syncs (account_id, detected_at DESC);

@@ -401,6 +401,7 @@ async function handleMe(session, env) {
 
 async function handleSync(request, env, session) {
   await ensureRankedMonsterColumns(env);
+  await ensureSuspiciousSyncsTable(env);
 
   const body = await readJson(request);
   if (typeof body.device_id !== "string" || !body.device_id.trim()) {
@@ -523,6 +524,24 @@ async function handleSync(request, env, session) {
       })
     )
     .run();
+
+  const suspiciousFindings = evaluateSuspiciousSync(rankedXpDelta, rankedProgression);
+  if (suspiciousFindings.length > 0) {
+    await persistSuspiciousSyncs(
+      env,
+      session.account_id,
+      canonicalMonster.monster_id,
+      deviceId,
+      suspiciousFindings,
+      {
+        client_monster_id: clientMonsterId,
+        ranked_xp_delta: rankedXpDelta,
+        ranked_progression: rankedProgression,
+        snapshot,
+      },
+      syncedAt
+    );
+  }
 
   const rankRow = await env.DB.prepare(
     `SELECT COUNT(*) + 1 AS rank
@@ -675,6 +694,41 @@ function computeAcceptedRankedProgression(existing, requestedXpDelta, syncedAt) 
   };
 }
 
+function evaluateSuspiciousSync(rankedXpDelta, rankedProgression) {
+  const findings = [];
+  if (rankedXpDelta <= 0) {
+    return findings;
+  }
+
+  if (rankedProgression.maxAcceptedDelta === 0 && rankedProgression.requestedDelta > 0) {
+    findings.push({
+      reason: "ranked_xp_without_elapsed_time",
+      severity: "high",
+    });
+  } else if (rankedProgression.requestedDelta > rankedProgression.maxAcceptedDelta) {
+    const severity =
+      rankedProgression.requestedDelta >= rankedProgression.maxAcceptedDelta * 3
+        ? "high"
+        : "warn";
+    findings.push({
+      reason: "ranked_xp_capped",
+      severity,
+    });
+  }
+
+  if (
+    rankedProgression.maxAcceptedDelta <= XP_PER_MINUTE_CAP + SYNC_XP_GRACE &&
+    rankedProgression.requestedDelta >= 250
+  ) {
+    findings.push({
+      reason: "ranked_xp_implausible_burst",
+      severity: "high",
+    });
+  }
+
+  return findings;
+}
+
 function maxXpGainSince(previousUpdatedAt, syncedAt) {
   if (!previousUpdatedAt) {
     return 0;
@@ -753,8 +807,70 @@ async function ensureRankedMonsterColumns(env) {
   }
 }
 
+async function ensureSuspiciousSyncsTable(env) {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS suspicious_syncs (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      monster_id TEXT,
+      device_id TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      requested_ranked_xp_delta INTEGER NOT NULL,
+      accepted_ranked_xp_delta INTEGER NOT NULL,
+      max_accepted_ranked_xp_delta INTEGER NOT NULL,
+      trusted_total_xp_after INTEGER NOT NULL,
+      payload_json TEXT NOT NULL,
+      detected_at TEXT NOT NULL
+    )`
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE INDEX IF NOT EXISTS idx_suspicious_syncs_account_detected
+      ON suspicious_syncs (account_id, detected_at DESC)`
+  ).run();
+}
+
+async function persistSuspiciousSyncs(
+  env,
+  accountId,
+  monsterId,
+  deviceId,
+  findings,
+  payload,
+  detectedAt
+) {
+  for (const finding of findings) {
+    await env.DB.prepare(
+      `INSERT INTO suspicious_syncs (
+          id, account_id, monster_id, device_id, reason, severity,
+          requested_ranked_xp_delta, accepted_ranked_xp_delta,
+          max_accepted_ranked_xp_delta, trusted_total_xp_after,
+          payload_json, detected_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        crypto.randomUUID(),
+        accountId,
+        monsterId,
+        deviceId,
+        finding.reason,
+        finding.severity,
+        payload.ranked_progression.requestedDelta,
+        payload.ranked_progression.acceptedDelta,
+        payload.ranked_progression.maxAcceptedDelta,
+        payload.ranked_progression.totalXp,
+        JSON.stringify(payload),
+        detectedAt
+      )
+      .run();
+  }
+}
+
 export {
   computeAcceptedRankedProgression,
+  evaluateSuspiciousSync,
   maxXpGainSince,
   progressionFromTotalXp,
   stageForLevel,

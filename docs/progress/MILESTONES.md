@@ -51,9 +51,24 @@ Commit:
 
 - Surfaced requested versus accepted ranked XP on sync.
 - Added local visibility when the server caps ranked XP growth.
+- Stored milestone progress in-repo.
+
+Commit:
+
+- `1c00584` `feat: track sync caps and milestone progress`
+
+### Milestone 6
+
+- Replaced ranked progression inference from local monster totals with explicit `ranked_xp_delta` evidence.
+- Kept unaccepted ranked XP locally pending for later syncs instead of discarding it.
+- Added suspicious-sync telemetry in the worker for capped, zero-elapsed, and implausible ranked XP submissions.
+- Added worker tests for suspicious-sync detection.
+
+Commits:
+
+- `7996b96` `feat: sync ranked xp as coding evidence`
 
 Pending next:
 
-- replace ranked snapshot sync with activity-evidence sync
-- add suspicious-sync persistence and operator visibility
+- expose suspicious-sync visibility to operators or admin tooling
 - stop using client-declared level/stage as ranked inputs entirely

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   computeAcceptedRankedProgression,
+  evaluateSuspiciousSync,
   maxXpGainSince,
   progressionFromTotalXp,
   stageForLevel,
@@ -61,4 +62,46 @@ test("stageForLevel uses authoritative level thresholds", () => {
   assert.equal(stageForLevel(1), "Baby");
   assert.equal(stageForLevel(5), "Young");
   assert.equal(stageForLevel(15), "Evolved");
+});
+
+test("suspicious sync flags ranked xp with no elapsed time", () => {
+  const progression = computeAcceptedRankedProgression(
+    {
+      ranked_total_xp: 100,
+      updated_at: "2026-04-11T22:05:00.000Z",
+    },
+    50,
+    "2026-04-11T22:05:00.000Z"
+  );
+
+  const findings = evaluateSuspiciousSync(50, progression);
+  assert.deepEqual(findings, [
+    {
+      reason: "ranked_xp_without_elapsed_time",
+      severity: "high",
+    },
+  ]);
+});
+
+test("suspicious sync flags capped and implausible ranked bursts", () => {
+  const progression = computeAcceptedRankedProgression(
+    {
+      ranked_total_xp: 100,
+      updated_at: "2026-04-11T22:00:00.000Z",
+    },
+    500,
+    "2026-04-11T22:01:00.000Z"
+  );
+
+  const findings = evaluateSuspiciousSync(500, progression);
+  assert.deepEqual(findings, [
+    {
+      reason: "ranked_xp_capped",
+      severity: "high",
+    },
+    {
+      reason: "ranked_xp_implausible_burst",
+      severity: "high",
+    },
+  ]);
 });
