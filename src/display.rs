@@ -70,11 +70,26 @@ struct MotionStyle {
     y_speed: f64,
 }
 
-const IDLE_MOTION: MotionStyle = MotionStyle { x_speed: 0.0, y_speed: 0.0 };
-const GENTLE_MOTION: MotionStyle = MotionStyle { x_speed: 0.11, y_speed: 0.07 };
-const WALKING_MOTION: MotionStyle = MotionStyle { x_speed: 0.13, y_speed: 0.09 };
-const FLOATING_MOTION: MotionStyle = MotionStyle { x_speed: 0.17, y_speed: 0.13 };
-const DRIFTING_MOTION: MotionStyle = MotionStyle { x_speed: 0.10, y_speed: 0.16 };
+const IDLE_MOTION: MotionStyle = MotionStyle {
+    x_speed: 0.0,
+    y_speed: 0.0,
+};
+const GENTLE_MOTION: MotionStyle = MotionStyle {
+    x_speed: 0.11,
+    y_speed: 0.07,
+};
+const WALKING_MOTION: MotionStyle = MotionStyle {
+    x_speed: 0.13,
+    y_speed: 0.09,
+};
+const FLOATING_MOTION: MotionStyle = MotionStyle {
+    x_speed: 0.17,
+    y_speed: 0.13,
+};
+const DRIFTING_MOTION: MotionStyle = MotionStyle {
+    x_speed: 0.10,
+    y_speed: 0.16,
+};
 
 // ── Form table ────────────────────────────────────────────────────────────────
 
@@ -111,10 +126,7 @@ pub fn tui_scene(
     reserve_right: u16,
 ) -> SpriteScene {
     let form = form(monster.species, monster.stage);
-    let active = matches!(
-        classify_mood(monster),
-        MoodState::Proud | MoodState::Fine
-    );
+    let active = matches!(classify_mood(monster), MoodState::Proud | MoodState::Fine);
     let frames = if active { form.active } else { form.idle };
     let face = face_for(monster);
     let frame_index = (tick / 6) as usize % frames.len().max(1);

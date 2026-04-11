@@ -2457,10 +2457,7 @@ fn draw_startup_choice(
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             )),
-            Line::from(Span::styled(
-                subline,
-                Style::default().fg(Color::DarkGray),
-            )),
+            Line::from(Span::styled(subline, Style::default().fg(Color::DarkGray))),
         ])
         .alignment(Alignment::Center),
         rows[0],
@@ -2481,20 +2478,8 @@ fn draw_startup_choice(
         ])
         .split(cards_area);
 
-    draw_startup_card(
-        f,
-        cols[1],
-        StartupOption::Online,
-        cursor == 0,
-        tick,
-    );
-    draw_startup_card(
-        f,
-        cols[3],
-        StartupOption::Offline,
-        cursor == 1,
-        tick,
-    );
+    draw_startup_card(f, cols[1], StartupOption::Online, cursor == 0, tick);
+    draw_startup_card(f, cols[3], StartupOption::Offline, cursor == 1, tick);
 
     f.render_widget(
         Paragraph::new(Span::styled(
@@ -2555,13 +2540,11 @@ fn draw_startup_card(
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(
-            Style::default().fg(border_color).add_modifier(if selected {
-                Modifier::BOLD
-            } else {
-                Modifier::empty()
-            }),
-        )
+        .border_style(Style::default().fg(border_color).add_modifier(if selected {
+            Modifier::BOLD
+        } else {
+            Modifier::empty()
+        }))
         .title(Span::styled(title, title_style))
         .title_alignment(Alignment::Center);
     let inner = block.inner(area);
@@ -2638,7 +2621,9 @@ fn draw_startup_card(
             icon_x,
             icon_y,
             icon,
-            Style::default().fg(Color::DarkGray).bg(Color::Rgb(15, 15, 18)),
+            Style::default()
+                .fg(Color::DarkGray)
+                .bg(Color::Rgb(15, 15, 18)),
         );
     }
 
@@ -2695,16 +2680,18 @@ fn draw_startup_card(
         Style::default().fg(Color::Gray)
     };
     let action_text = if selected {
-        format!("  ▶  ENTER to {}  ◀  ", match option {
-            StartupOption::Online => "go online",
-            StartupOption::Offline => "go offline",
-        })
+        format!(
+            "  ▶  ENTER to {}  ◀  ",
+            match option {
+                StartupOption::Online => "go online",
+                StartupOption::Offline => "go offline",
+            }
+        )
     } else {
         format!("  press {}  ", hotkey)
     };
     f.render_widget(
-        Paragraph::new(Span::styled(action_text, action_style))
-            .alignment(Alignment::Center),
+        Paragraph::new(Span::styled(action_text, action_style)).alignment(Alignment::Center),
         body_rows[4],
     );
 }
@@ -2909,9 +2896,7 @@ fn element_cell(element: Element, x: i64, y: i64, _w: i64, h: i64, tick: u64) ->
             if val > 78 {
                 (
                     '≈',
-                    Style::default()
-                        .fg(Color::White)
-                        .bg(Color::Rgb(0, 70, 150)),
+                    Style::default().fg(Color::White).bg(Color::Rgb(0, 70, 150)),
                 )
             } else if val > 58 {
                 (
@@ -2923,16 +2908,12 @@ fn element_cell(element: Element, x: i64, y: i64, _w: i64, h: i64, tick: u64) ->
             } else if val > 38 {
                 (
                     '-',
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .bg(Color::Rgb(0, 28, 85)),
+                    Style::default().fg(Color::Cyan).bg(Color::Rgb(0, 28, 85)),
                 )
             } else if val > 20 {
                 (
                     '·',
-                    Style::default()
-                        .fg(Color::Blue)
-                        .bg(Color::Rgb(0, 18, 60)),
+                    Style::default().fg(Color::Blue).bg(Color::Rgb(0, 18, 60)),
                 )
             } else {
                 (' ', Style::default().bg(Color::Rgb(0, 12, 45)))
@@ -2945,9 +2926,7 @@ fn element_cell(element: Element, x: i64, y: i64, _w: i64, h: i64, tick: u64) ->
             if bottom_dist == 0 {
                 (
                     '▒',
-                    Style::default()
-                        .fg(Color::Green)
-                        .bg(Color::Rgb(25, 70, 25)),
+                    Style::default().fg(Color::Green).bg(Color::Rgb(25, 70, 25)),
                 )
             } else if bottom_dist <= 1 + (n % 3) {
                 let blade = match (n + sway).rem_euclid(4) {
@@ -2972,9 +2951,7 @@ fn element_cell(element: Element, x: i64, y: i64, _w: i64, h: i64, tick: u64) ->
             } else if n < 8 {
                 (
                     '"',
-                    Style::default()
-                        .fg(Color::Green)
-                        .bg(Color::Rgb(0, 18, 5)),
+                    Style::default().fg(Color::Green).bg(Color::Rgb(0, 18, 5)),
                 )
             } else {
                 (' ', Style::default().bg(Color::Rgb(0, 14, 5)))
@@ -3021,11 +2998,7 @@ fn render_egg_overlay(
     let start_x = area.x + area.width.saturating_sub(art_w) / 2;
     let element = starter_element(species);
     let buf = f.buffer_mut();
-    let outline = if selected {
-        Color::White
-    } else {
-        Color::Gray
-    };
+    let outline = if selected { Color::White } else { Color::Gray };
     let accent = element_accent(element);
     for (dy, row) in art.iter().enumerate() {
         for (dx, ch) in row.chars().enumerate() {
@@ -3084,33 +3057,32 @@ fn draw_onboarding_intro(f: &mut ratatui::Frame, area: Rect, animation_tick: u64
     for row in onboarding_title_art() {
         lines.push(Line::from(Span::styled(
             (*row).to_string(),
-            Style::default().fg(title_color).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(title_color)
+                .add_modifier(Modifier::BOLD),
         )));
     }
     lines.extend([
         Line::from(""),
         Line::from(vec![
-            Span::styled(
-                "◆ ",
-                Style::default().fg(Color::LightMagenta),
-            ),
+            Span::styled("◆ ", Style::default().fg(Color::LightMagenta)),
             Span::styled(
                 "A monster grows from your code.",
                 Style::default()
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                " ◆",
-                Style::default().fg(Color::LightMagenta),
-            ),
+            Span::styled(" ◆", Style::default().fg(Color::LightMagenta)),
         ]),
         Line::from(Span::styled(
             "Hatch an egg, feed it, train it, climb the ladder.",
             Style::default().fg(Color::Gray),
         )),
         Line::from(""),
-        Line::from(Span::styled("   ▶  PRESS ENTER TO BEGIN  ◀   ", start_style)),
+        Line::from(Span::styled(
+            "   ▶  PRESS ENTER TO BEGIN  ◀   ",
+            start_style,
+        )),
         Line::from(""),
         Line::from(Span::styled(
             "Enter · start    Esc · quit",
@@ -3180,22 +3152,16 @@ fn draw_onboarding_egg_select(
         };
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(
-                Style::default()
-                    .fg(border_color)
-                    .add_modifier(if selected {
-                        Modifier::BOLD
-                    } else {
-                        Modifier::empty()
-                    }),
-            )
+            .border_style(Style::default().fg(border_color).add_modifier(if selected {
+                Modifier::BOLD
+            } else {
+                Modifier::empty()
+            }))
             .title(Span::styled(
                 title_text,
-                Style::default().fg(if selected {
-                    accent
-                } else {
-                    Color::Gray
-                }).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(if selected { accent } else { Color::Gray })
+                    .add_modifier(Modifier::BOLD),
             ))
             .title_alignment(Alignment::Center);
         let inner = block.inner(card_area);
@@ -3304,11 +3270,7 @@ fn draw_onboarding_name(
     let card = center_rect_with_size(area, 56.min(area.width), 20.min(area.height));
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(
-            Style::default()
-                .fg(accent)
-                .add_modifier(Modifier::BOLD),
-        )
+        .border_style(Style::default().fg(accent).add_modifier(Modifier::BOLD))
         .title(Span::styled(
             format!(" ◆ {} EGG ◆ ", element_label(element)),
             Style::default().fg(accent).add_modifier(Modifier::BOLD),
@@ -3374,25 +3336,23 @@ fn draw_onboarding_name(
     };
     f.render_widget(
         Paragraph::new(Line::from(vec![
+            Span::styled("  ", Style::default().bg(Color::Black)),
             Span::styled(
-                "  ",
-                Style::default().bg(Color::Black),
-            ),
-            Span::styled(
-                format!(" {} ", if name_input.is_empty() { "" } else { name_input }),
+                format!(
+                    " {} ",
+                    if name_input.is_empty() {
+                        ""
+                    } else {
+                        name_input
+                    }
+                ),
                 Style::default()
                     .fg(accent)
                     .bg(Color::Black)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                cursor,
-                Style::default().fg(accent).bg(Color::Black),
-            ),
-            Span::styled(
-                "  ",
-                Style::default().bg(Color::Black),
-            ),
+            Span::styled(cursor, Style::default().fg(accent).bg(Color::Black)),
+            Span::styled("  ", Style::default().bg(Color::Black)),
         ]))
         .alignment(Alignment::Center),
         form_rows[2],
@@ -3432,11 +3392,7 @@ fn draw_onboarding_confirm(
     f.render_widget(Clear, modal);
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(
-            Style::default()
-                .fg(accent)
-                .add_modifier(Modifier::BOLD),
-        )
+        .border_style(Style::default().fg(accent).add_modifier(Modifier::BOLD))
         .title(Span::styled(
             " ◆  READY TO HATCH?  ◆ ",
             Style::default().fg(accent).add_modifier(Modifier::BOLD),
@@ -3506,9 +3462,7 @@ fn draw_onboarding_confirm(
     f.render_widget(
         Paragraph::new(Span::styled(
             format!("{} the {}", preview.name, starter_species_name(species)),
-            Style::default()
-                .fg(accent)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
         ))
         .alignment(Alignment::Center),
         rows[0],
@@ -3536,9 +3490,7 @@ fn draw_onboarding_confirm(
             .bg(accent)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default()
-            .fg(Color::Gray)
-            .add_modifier(Modifier::DIM)
+        Style::default().fg(Color::Gray).add_modifier(Modifier::DIM)
     };
     let back_style = if confirm_choice == 1 {
         Style::default()
@@ -3546,9 +3498,7 @@ fn draw_onboarding_confirm(
             .bg(Color::Yellow)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default()
-            .fg(Color::Gray)
-            .add_modifier(Modifier::DIM)
+        Style::default().fg(Color::Gray).add_modifier(Modifier::DIM)
     };
 
     f.render_widget(
