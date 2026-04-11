@@ -6,10 +6,12 @@ import {
   extractBearerToken,
   evaluateSuspiciousSync,
   maxXpGainSince,
+  normalizeProfileStage,
   normalizeSeverity,
   parseSuspiciousSyncQuery,
   progressionFromTotalXp,
   stageForLevel,
+  validateProfileSnapshot,
 } from "./index.js";
 
 test("first sync starts ranked progression at zero", () => {
@@ -129,4 +131,28 @@ test("parseSuspiciousSyncQuery normalizes filters and caps limit", () => {
 
 test("normalizeSeverity rejects unsupported values", () => {
   assert.throws(() => normalizeSeverity("critical"), /severity must be one of: warn, high/);
+});
+
+test("validateProfileSnapshot accepts inconsistent local progression fields", () => {
+  const snapshot = validateProfileSnapshot({
+    name: "Embit",
+    level: 99,
+    xp: 999,
+    total_xp: 1,
+    stage: "Baby",
+    hunger: 80,
+    energy: 75,
+    mood: 90,
+    last_active_at: "2026-04-11T22:00:00.000Z",
+  });
+
+  assert.equal(snapshot.level, 99);
+  assert.equal(snapshot.xp, 999);
+  assert.equal(snapshot.total_xp, 1);
+  assert.equal(snapshot.stage, "Baby");
+});
+
+test("normalizeProfileStage still rejects invalid profile stages", () => {
+  assert.equal(normalizeProfileStage("Young"), "Young");
+  assert.throws(() => normalizeProfileStage("Legendary"), /snapshot.stage is invalid/);
 });

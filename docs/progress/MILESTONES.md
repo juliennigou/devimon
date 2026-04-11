@@ -76,7 +76,14 @@ Commits:
 - Added query filters for `limit`, `account_id`, and `severity`.
 - Added worker tests around the admin query and auth helpers.
 
+### Milestone 8
+
+- Fully decoupled ranked truth from client monster snapshot consistency.
+- Worker snapshot validation now treats client level/xp/total_xp/stage as profile data only.
+- Ranked progression remains derived exclusively from trusted `ranked_xp_delta` evidence.
+- Added worker tests proving profile snapshot inconsistency no longer affects ranked trust.
+
 Pending next:
 
 - document or script the admin/debug access flow for operators
-- stop using client-declared level/stage as ranked inputs entirely
+- consider trimming the client snapshot itself down to profile-only fields

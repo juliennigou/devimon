@@ -443,7 +443,7 @@ async function handleSync(request, env, session) {
       ? body.monster_id.trim()
       : null;
   const rankedXpDelta = Number(body.ranked_xp_delta || 0);
-  const snapshot = validateSnapshot(body.snapshot);
+  const snapshot = validateProfileSnapshot(body.snapshot);
   const syncedAt = nowIso();
 
   await env.DB.prepare(
@@ -593,7 +593,7 @@ async function handleSync(request, env, session) {
   });
 }
 
-function validateSnapshot(snapshot) {
+function validateProfileSnapshot(snapshot) {
   const requiredStrings = ["name", "stage", "last_active_at"];
   for (const key of requiredStrings) {
     if (typeof snapshot[key] !== "string" || !snapshot[key].trim()) {
@@ -618,27 +618,16 @@ function validateSnapshot(snapshot) {
     throw new HttpError(400, "snapshot.total_xp is invalid");
   }
 
-  const level = snapshot.level;
-  const xp = snapshot.xp;
-  const totalXp = snapshot.total_xp;
-  const stage = normalizeStage(snapshot.stage, level);
+  // Snapshot fields are profile-only and never drive ranked truth.
+  // Ranked progression is derived exclusively from trusted ranked XP evidence.
+  const stage = normalizeProfileStage(snapshot.stage);
   const lastActiveAt = parseIsoTimestamp(snapshot.last_active_at, "snapshot.last_active_at");
-  const expectedTotalXp = totalXpForLevel(level) + xp;
-  const xpToNext = 10 + level * 5;
-
-  if (xp >= xpToNext) {
-    throw new HttpError(400, "snapshot.xp is inconsistent with snapshot.level");
-  }
-
-  if (totalXp !== expectedTotalXp) {
-    throw new HttpError(400, "snapshot.level, snapshot.xp, and snapshot.total_xp are inconsistent");
-  }
 
   return {
     name: snapshot.name.trim().slice(0, 40),
-    level,
-    xp,
-    total_xp: totalXp,
+    level: snapshot.level,
+    xp: snapshot.xp,
+    total_xp: snapshot.total_xp,
     stage,
     hunger: clamp(snapshot.hunger, 0, 100),
     energy: clamp(snapshot.energy, 0, 100),
@@ -647,18 +636,10 @@ function validateSnapshot(snapshot) {
   };
 }
 
-function normalizeStage(stage, level) {
+function normalizeProfileStage(stage) {
   const value = stage.trim();
   if (!ALLOWED_STAGES.has(value)) {
     throw new HttpError(400, "snapshot.stage is invalid");
-  }
-
-  // First-pass anti-cheat: reject stages that are obviously impossible for the level.
-  if (value === "Young" && level < 5) {
-    throw new HttpError(400, "snapshot.stage is inconsistent with snapshot.level");
-  }
-  if (value === "Evolved" && level < 15) {
-    throw new HttpError(400, "snapshot.stage is inconsistent with snapshot.level");
   }
 
   return value;
@@ -975,10 +956,12 @@ export {
   extractBearerToken,
   evaluateSuspiciousSync,
   maxXpGainSince,
+  normalizeProfileStage,
   normalizeSeverity,
   parseSuspiciousSyncQuery,
   progressionFromTotalXp,
   requireAdminToken,
   stageForLevel,
   totalXpForLevel,
+  validateProfileSnapshot,
 };
