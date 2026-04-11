@@ -37,6 +37,10 @@ CREATE TABLE IF NOT EXISTS monsters (
   xp INTEGER NOT NULL CHECK (xp >= 0),
   total_xp INTEGER NOT NULL CHECK (total_xp >= 0),
   stage TEXT NOT NULL CHECK (stage IN ('Baby', 'Young', 'Evolved')),
+  ranked_level INTEGER NOT NULL DEFAULT 1 CHECK (ranked_level >= 1),
+  ranked_xp INTEGER NOT NULL DEFAULT 0 CHECK (ranked_xp >= 0),
+  ranked_total_xp INTEGER NOT NULL DEFAULT 0 CHECK (ranked_total_xp >= 0),
+  ranked_stage TEXT NOT NULL DEFAULT 'Baby' CHECK (ranked_stage IN ('Baby', 'Young', 'Evolved')),
   hunger REAL NOT NULL CHECK (hunger >= 0 AND hunger <= 100),
   energy REAL NOT NULL CHECK (energy >= 0 AND energy <= 100),
   mood REAL NOT NULL CHECK (mood >= 0 AND mood <= 100),
@@ -65,6 +69,9 @@ CREATE TABLE IF NOT EXISTS sync_history (
 
 CREATE INDEX IF NOT EXISTS idx_monsters_total_xp
   ON monsters (total_xp DESC, level DESC, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_monsters_ranked_total_xp
+  ON monsters (ranked_total_xp DESC, ranked_level DESC, updated_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_sessions_account
   ON sessions (account_id);

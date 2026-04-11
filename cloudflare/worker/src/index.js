@@ -6,6 +6,17 @@ const corsHeaders = {
 
 const ALLOWED_STAGES = new Set(["Baby", "Young", "Evolved"]);
 const MAX_SYNC_LEVEL = 10000;
+const XP_PER_MINUTE_CAP = 10;
+const SYNC_XP_GRACE = 10;
+const RANKED_MONSTER_COLUMNS = [
+  { name: "ranked_level", ddl: "ALTER TABLE monsters ADD COLUMN ranked_level INTEGER NOT NULL DEFAULT 1 CHECK (ranked_level >= 1)" },
+  { name: "ranked_xp", ddl: "ALTER TABLE monsters ADD COLUMN ranked_xp INTEGER NOT NULL DEFAULT 0 CHECK (ranked_xp >= 0)" },
+  { name: "ranked_total_xp", ddl: "ALTER TABLE monsters ADD COLUMN ranked_total_xp INTEGER NOT NULL DEFAULT 0 CHECK (ranked_total_xp >= 0)" },
+  {
+    name: "ranked_stage",
+    ddl: "ALTER TABLE monsters ADD COLUMN ranked_stage TEXT NOT NULL DEFAULT 'Baby' CHECK (ranked_stage IN ('Baby', 'Young', 'Evolved'))",
+  },
+];
 
 export default {
   async fetch(request, env) {
@@ -389,6 +400,8 @@ async function handleMe(session, env) {
 }
 
 async function handleSync(request, env, session) {
+  await ensureRankedMonsterColumns(env);
+
   const body = await readJson(request);
   if (typeof body.device_id !== "string" || !body.device_id.trim()) {
     throw new HttpError(400, "device_id is required");
@@ -417,7 +430,7 @@ async function handleSync(request, env, session) {
     .run();
 
   const existing = await env.DB.prepare(
-    `SELECT monster_id
+    `SELECT monster_id, ranked_total_xp, updated_at
        FROM monsters
       WHERE account_id = ?`
   )
@@ -426,13 +439,15 @@ async function handleSync(request, env, session) {
 
   // Monster ownership is server-side: client-supplied IDs are ignored here.
   const monsterId = existing?.monster_id || crypto.randomUUID();
+  const rankedProgression = computeAcceptedRankedProgression(existing, snapshot.total_xp, syncedAt);
 
   await env.DB.prepare(
     `INSERT INTO monsters (
         monster_id, account_id, name, level, xp, total_xp, stage,
+        ranked_level, ranked_xp, ranked_total_xp, ranked_stage,
         hunger, energy, mood, last_active_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(account_id)
       DO UPDATE SET
         name = excluded.name,
@@ -440,6 +455,10 @@ async function handleSync(request, env, session) {
         xp = excluded.xp,
         total_xp = excluded.total_xp,
         stage = excluded.stage,
+        ranked_level = excluded.ranked_level,
+        ranked_xp = excluded.ranked_xp,
+        ranked_total_xp = excluded.ranked_total_xp,
+        ranked_stage = excluded.ranked_stage,
         hunger = excluded.hunger,
         energy = excluded.energy,
         mood = excluded.mood,
@@ -454,6 +473,10 @@ async function handleSync(request, env, session) {
       snapshot.xp,
       snapshot.total_xp,
       snapshot.stage,
+      rankedProgression.level,
+      rankedProgression.xp,
+      rankedProgression.totalXp,
+      rankedProgression.stage,
       snapshot.hunger,
       snapshot.energy,
       snapshot.mood,
@@ -487,6 +510,7 @@ async function handleSync(request, env, session) {
         device_id: deviceId,
         client_monster_id: clientMonsterId,
         resolved_monster_id: canonicalMonster.monster_id,
+        ranked_progression: rankedProgression,
         snapshot,
       })
     )
@@ -495,16 +519,16 @@ async function handleSync(request, env, session) {
   const rankRow = await env.DB.prepare(
     `SELECT COUNT(*) + 1 AS rank
        FROM monsters
-      WHERE total_xp > ?
-         OR (total_xp = ? AND level > ?)
-         OR (total_xp = ? AND level = ? AND updated_at > ?)`
+      WHERE ranked_total_xp > ?
+         OR (ranked_total_xp = ? AND ranked_level > ?)
+         OR (ranked_total_xp = ? AND ranked_level = ? AND updated_at > ?)`
   )
     .bind(
-      snapshot.total_xp,
-      snapshot.total_xp,
-      snapshot.level,
-      snapshot.total_xp,
-      snapshot.level,
+      rankedProgression.totalXp,
+      rankedProgression.totalXp,
+      rankedProgression.level,
+      rankedProgression.totalXp,
+      rankedProgression.level,
       syncedAt
     )
     .first();
@@ -513,6 +537,10 @@ async function handleSync(request, env, session) {
     monster_id: canonicalMonster.monster_id,
     synced_at: syncedAt,
     leaderboard_rank: rankRow?.rank ? Number(rankRow.rank) : null,
+    trusted_total_xp: rankedProgression.totalXp,
+    trusted_level: rankedProgression.level,
+    trusted_stage: rankedProgression.stage,
+    accepted_xp_delta: rankedProgression.acceptedDelta,
   });
 }
 
@@ -587,12 +615,69 @@ function normalizeStage(stage, level) {
   return value;
 }
 
+function stageForLevel(level) {
+  if (level >= 15) {
+    return "Evolved";
+  }
+  if (level >= 5) {
+    return "Young";
+  }
+  return "Baby";
+}
+
 function totalXpForLevel(level) {
   let total = 0;
   for (let currentLevel = 1; currentLevel < level; currentLevel += 1) {
     total += 10 + currentLevel * 5;
   }
   return total;
+}
+
+function progressionFromTotalXp(totalXp) {
+  let level = 1;
+  let remaining = totalXp;
+
+  while (remaining >= 10 + level * 5) {
+    remaining -= 10 + level * 5;
+    level += 1;
+  }
+
+  return {
+    level,
+    xp: remaining,
+    totalXp,
+    stage: stageForLevel(level),
+  };
+}
+
+function computeAcceptedRankedProgression(existing, requestedTotalXp, syncedAt) {
+  const previousTotalXp = Number(existing?.ranked_total_xp || 0);
+  const requestedDelta = Math.max(0, requestedTotalXp - previousTotalXp);
+  const maxAcceptedDelta = maxXpGainSince(existing?.updated_at, syncedAt);
+  const acceptedDelta = Math.min(requestedDelta, maxAcceptedDelta);
+  const trustedTotalXp = previousTotalXp + acceptedDelta;
+
+  return {
+    ...progressionFromTotalXp(trustedTotalXp),
+    acceptedDelta,
+    requestedDelta,
+    maxAcceptedDelta,
+  };
+}
+
+function maxXpGainSince(previousUpdatedAt, syncedAt) {
+  if (!previousUpdatedAt) {
+    return 0;
+  }
+
+  const previous = Date.parse(previousUpdatedAt);
+  const current = Date.parse(syncedAt);
+  if (!Number.isFinite(previous) || !Number.isFinite(current) || current <= previous) {
+    return 0;
+  }
+
+  const elapsedMinutes = Math.floor((current - previous) / 60_000);
+  return elapsedMinutes * XP_PER_MINUTE_CAP + SYNC_XP_GRACE;
 }
 
 function parseIsoTimestamp(value, fieldName) {
@@ -608,6 +693,8 @@ function clamp(value, min, max) {
 }
 
 async function handleLeaderboard(request, env) {
+  await ensureRankedMonsterColumns(env);
+
   const url = new URL(request.url);
   const requested = Number(url.searchParams.get("limit") || 20);
   const limit = Number.isFinite(requested)
@@ -615,11 +702,11 @@ async function handleLeaderboard(request, env) {
     : 20;
 
   const rows = await env.DB.prepare(
-    `SELECT m.monster_id, m.name, m.level, m.total_xp, m.stage,
+    `SELECT m.monster_id, m.name, m.ranked_level, m.ranked_total_xp, m.ranked_stage,
             m.updated_at, m.last_active_at, a.username
        FROM monsters m
        JOIN accounts a ON m.account_id = a.account_id
-      ORDER BY m.total_xp DESC, m.level DESC, m.updated_at DESC
+      ORDER BY m.ranked_total_xp DESC, m.ranked_level DESC, m.updated_at DESC
       LIMIT ?`
   )
     .bind(limit)
@@ -630,9 +717,9 @@ async function handleLeaderboard(request, env) {
     monster_id: row.monster_id,
     name: row.name,
     github_username: row.username,
-    level: Number(row.level),
-    total_xp: Number(row.total_xp),
-    stage: row.stage,
+    level: Number(row.ranked_level),
+    total_xp: Number(row.ranked_total_xp),
+    stage: row.ranked_stage,
     updated_at: row.updated_at,
     last_active_at: row.last_active_at,
   }));
@@ -642,3 +729,24 @@ async function handleLeaderboard(request, env) {
     monsters,
   });
 }
+
+async function ensureRankedMonsterColumns(env) {
+  const result = await env.DB.prepare("PRAGMA table_info(monsters)").all();
+  const existingColumns = new Set((result.results || []).map((column) => column.name));
+
+  for (const column of RANKED_MONSTER_COLUMNS) {
+    if (existingColumns.has(column.name)) {
+      continue;
+    }
+    await env.DB.prepare(column.ddl).run();
+    existingColumns.add(column.name);
+  }
+}
+
+export {
+  computeAcceptedRankedProgression,
+  maxXpGainSince,
+  progressionFromTotalXp,
+  stageForLevel,
+  totalXpForLevel,
+};
