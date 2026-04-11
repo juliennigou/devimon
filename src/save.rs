@@ -1,4 +1,4 @@
-use crate::monster::Monster;
+use crate::monster::{Monster, Stage};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -24,6 +24,16 @@ pub struct CloudState {
     #[serde(default)]
     pub last_synced_at: Option<DateTime<Utc>>,
     #[serde(default)]
+    pub trusted_total_xp: Option<u32>,
+    #[serde(default)]
+    pub trusted_level: Option<u32>,
+    #[serde(default)]
+    pub trusted_stage: Option<Stage>,
+    #[serde(default)]
+    pub leaderboard_rank: Option<u64>,
+    #[serde(default)]
+    pub last_accepted_xp_delta: Option<u32>,
+    #[serde(default)]
     pub sync_dirty: bool,
 }
 
@@ -34,6 +44,11 @@ impl Default for CloudState {
             monster_id: None,
             account: None,
             last_synced_at: None,
+            trusted_total_xp: None,
+            trusted_level: None,
+            trusted_stage: None,
+            leaderboard_rank: None,
+            last_accepted_xp_delta: None,
             sync_dirty: false,
         }
     }
@@ -275,6 +290,11 @@ pub fn clear_session(state: &mut SaveFile) {
     state.cloud.account = None;
     state.cloud.monster_id = None;
     state.cloud.last_synced_at = None;
+    state.cloud.trusted_total_xp = None;
+    state.cloud.trusted_level = None;
+    state.cloud.trusted_stage = None;
+    state.cloud.leaderboard_rank = None;
+    state.cloud.last_accepted_xp_delta = None;
     state.cloud.sync_dirty = false;
 }
 

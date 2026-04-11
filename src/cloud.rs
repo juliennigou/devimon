@@ -82,7 +82,16 @@ struct MonsterSnapshot {
 pub struct SyncResponse {
     pub monster_id: String,
     pub synced_at: DateTime<Utc>,
+    #[serde(default)]
     pub leaderboard_rank: Option<u64>,
+    #[serde(default)]
+    pub trusted_total_xp: Option<u32>,
+    #[serde(default)]
+    pub trusted_level: Option<u32>,
+    #[serde(default)]
+    pub trusted_stage: Option<Stage>,
+    #[serde(default)]
+    pub accepted_xp_delta: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -202,6 +211,11 @@ pub fn sync_state(state: &mut SaveFile) -> Result<SyncResponse, String> {
     let sync: SyncResponse = parse_json(response)?;
     state.cloud.monster_id = Some(sync.monster_id.clone());
     state.cloud.last_synced_at = Some(sync.synced_at);
+    state.cloud.trusted_total_xp = sync.trusted_total_xp;
+    state.cloud.trusted_level = sync.trusted_level;
+    state.cloud.trusted_stage = sync.trusted_stage;
+    state.cloud.leaderboard_rank = sync.leaderboard_rank;
+    state.cloud.last_accepted_xp_delta = sync.accepted_xp_delta;
     state.cloud.sync_dirty = false;
     Ok(sync)
 }

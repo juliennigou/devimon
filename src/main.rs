@@ -127,6 +127,28 @@ fn print_sync_status(sync: &SyncResponse) {
             format!("🏆 Current leaderboard rank: #{}", rank).bright_yellow()
         );
     }
+    if let (Some(level), Some(total_xp), Some(stage)) = (
+        sync.trusted_level,
+        sync.trusted_total_xp,
+        sync.trusted_stage,
+    ) {
+        println!(
+            "  {}",
+            format!(
+                "Trusted cloud progression: lv.{} · {} · {} XP",
+                level,
+                stage.label(),
+                total_xp
+            )
+            .bright_black()
+        );
+    }
+    if let Some(accepted) = sync.accepted_xp_delta {
+        println!(
+            "  {}",
+            format!("Accepted by server on this sync: +{} XP", accepted).bright_black()
+        );
+    }
 }
 
 fn maybe_sync_after_local_change(state: &mut SaveFile) {
@@ -201,6 +223,25 @@ fn cmd_status() -> Result<(), String> {
         );
         if let Some(monster_id) = &state.cloud.monster_id {
             println!("  {}", format!("Monster ID: {}", monster_id).bright_black());
+        }
+        if let (Some(level), Some(total_xp), Some(stage)) = (
+            state.cloud.trusted_level,
+            state.cloud.trusted_total_xp,
+            state.cloud.trusted_stage,
+        ) {
+            println!(
+                "  {}",
+                format!(
+                    "Trusted cloud: lv.{} · {} · {} XP",
+                    level,
+                    stage.label(),
+                    total_xp
+                )
+                .bright_black()
+            );
+        }
+        if let Some(rank) = state.cloud.leaderboard_rank {
+            println!("  {}", format!("Trusted rank: #{}", rank).bright_black());
         }
     }
     println!();
@@ -346,6 +387,21 @@ fn cmd_whoami() -> Result<(), String> {
     println!("  Device ID: {}", state.cloud.device_id);
     if let Some(monster_id) = me.monster_id.or_else(|| state.cloud.monster_id.clone()) {
         println!("  Monster ID: {}", monster_id);
+    }
+    if let (Some(level), Some(total_xp), Some(stage)) = (
+        state.cloud.trusted_level,
+        state.cloud.trusted_total_xp,
+        state.cloud.trusted_stage,
+    ) {
+        println!(
+            "  Trusted Cloud: lv.{} · {} · {} XP",
+            level,
+            stage.label(),
+            total_xp
+        );
+    }
+    if let Some(rank) = state.cloud.leaderboard_rank {
+        println!("  Trusted Rank: #{}", rank);
     }
     Ok(())
 }

@@ -1080,8 +1080,29 @@ fn maybe_sync(
             save::save_state(state).ok();
             if should_replace_flash(flash) {
                 let message = match sync.leaderboard_rank {
-                    Some(rank) => format!("☁️ Sync ok — rang #{}", rank),
-                    None => "☁️ Sync ok".to_string(),
+                    Some(rank) => match (sync.trusted_level, sync.accepted_xp_delta) {
+                        (Some(level), Some(accepted)) => {
+                            format!(
+                                "☁️ Sync ok — rang #{} · cloud lv.{} · +{} XP",
+                                rank, level, accepted
+                            )
+                        }
+                        (Some(level), None) => {
+                            format!("☁️ Sync ok — rang #{} · cloud lv.{}", rank, level)
+                        }
+                        (None, Some(accepted)) => {
+                            format!("☁️ Sync ok — rang #{} · +{} XP", rank, accepted)
+                        }
+                        (None, None) => format!("☁️ Sync ok — rang #{}", rank),
+                    },
+                    None => match (sync.trusted_level, sync.accepted_xp_delta) {
+                        (Some(level), Some(accepted)) => {
+                            format!("☁️ Sync ok — cloud lv.{} · +{} XP", level, accepted)
+                        }
+                        (Some(level), None) => format!("☁️ Sync ok — cloud lv.{}", level),
+                        (None, Some(accepted)) => format!("☁️ Sync ok — +{} XP", accepted),
+                        (None, None) => "☁️ Sync ok".to_string(),
+                    },
                 };
                 *flash = Some(Flash {
                     message,
@@ -1630,10 +1651,16 @@ fn draw_footer(f: &mut ratatui::Frame, area: Rect, state: &SaveFile) {
         } else {
             "cloud synced"
         };
+        let trusted = match (state.cloud.leaderboard_rank, state.cloud.trusted_level) {
+            (Some(rank), Some(level)) => format!(" · rank #{} · cloud lv.{}", rank, level),
+            (Some(rank), None) => format!(" · rank #{}", rank),
+            (None, Some(level)) => format!(" · cloud lv.{}", level),
+            (None, None) => String::new(),
+        };
         Line::from(vec![
             Span::styled("☁ ", Style::default().fg(Color::Cyan)),
             Span::styled(
-                format!("@{} · {}", account.username, suffix),
+                format!("@{} · {}{}", account.username, suffix, trusted),
                 Style::default().fg(Color::DarkGray),
             ),
         ])
@@ -2148,6 +2175,30 @@ fn draw_settings(
                 },
                 Style::default().fg(Color::Yellow),
             )),
+            Line::from(Span::styled(
+                match (
+                    state.cloud.leaderboard_rank,
+                    state.cloud.trusted_level,
+                    state.cloud.trusted_total_xp,
+                    state.cloud.trusted_stage,
+                ) {
+                    (Some(rank), Some(level), Some(total_xp), Some(stage)) => format!(
+                        "Trusted rank  #{}  ·  lv.{} {}  ·  {} XP",
+                        rank,
+                        level,
+                        stage.label(),
+                        total_xp
+                    ),
+                    (_, Some(level), Some(total_xp), Some(stage)) => format!(
+                        "Trusted cloud  lv.{} {}  ·  {} XP",
+                        level,
+                        stage.label(),
+                        total_xp
+                    ),
+                    _ => "Trusted cloud  waiting for first sync".to_string(),
+                },
+                Style::default().fg(Color::DarkGray),
+            )),
         ]
     } else {
         vec![
@@ -2163,6 +2214,7 @@ fn draw_settings(
                 format!("Device ID   {}", state.cloud.device_id),
                 Style::default().fg(Color::DarkGray),
             )),
+            Line::from(""),
             Line::from(""),
             Line::from(""),
         ]
