@@ -93,6 +93,17 @@ Commit:
 - Added the required `ADMIN_DEBUG_TOKEN` secret to the Cloudflare README.
 - Added a dedicated operator note with request examples, filters, and reason meanings.
 
+Commit:
+
+- `1c697e6` `docs: add admin debug operator guide`
+
+### Milestone 10
+
+- Trimmed the sync snapshot down to true profile fields only.
+- Worker now mirrors ranked fields from trusted ranked progression instead of client monster progression.
+- Made mood-history sampling time-based with one sample per elapsed hour, instead of one sample per tick.
+- Added tests for profile-only snapshot validation and hourly mood sampling.
+
 Pending next:
 
-- consider trimming the client snapshot itself down to profile-only fields
+- revisit final evolution mood averaging with stronger multi-day semantics

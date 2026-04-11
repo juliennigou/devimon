@@ -63,16 +63,12 @@ struct SyncRequest<'a> {
     device_id: &'a str,
     monster_id: Option<&'a str>,
     ranked_xp_delta: u32,
-    snapshot: MonsterSnapshot,
+    snapshot: ProfileSnapshot,
 }
 
 #[derive(Debug, Serialize)]
-struct MonsterSnapshot {
+struct ProfileSnapshot {
     name: String,
-    level: u32,
-    xp: u32,
-    total_xp: u32,
-    stage: Stage,
     hunger: f32,
     energy: f32,
     mood: f32,
@@ -188,12 +184,8 @@ pub fn sync_state(state: &mut SaveFile) -> Result<SyncResponse, String> {
 
     let snapshot = {
         let m = state.leaderboard_monster();
-        MonsterSnapshot {
+        ProfileSnapshot {
             name: m.name.clone(),
-            level: m.level,
-            xp: m.xp,
-            total_xp: m.total_xp,
-            stage: m.stage,
             hunger: m.hunger,
             energy: m.energy,
             mood: m.mood,

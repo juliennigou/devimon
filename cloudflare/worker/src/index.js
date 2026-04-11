@@ -497,10 +497,10 @@ async function handleSync(request, env, session) {
       monsterId,
       session.account_id,
       snapshot.name,
-      snapshot.level,
-      snapshot.xp,
-      snapshot.total_xp,
-      snapshot.stage,
+      rankedProgression.level,
+      rankedProgression.xp,
+      rankedProgression.totalXp,
+      rankedProgression.stage,
       rankedProgression.level,
       rankedProgression.xp,
       rankedProgression.totalXp,
@@ -594,55 +594,31 @@ async function handleSync(request, env, session) {
 }
 
 function validateProfileSnapshot(snapshot) {
-  const requiredStrings = ["name", "stage", "last_active_at"];
+  const requiredStrings = ["name", "last_active_at"];
   for (const key of requiredStrings) {
     if (typeof snapshot[key] !== "string" || !snapshot[key].trim()) {
       throw new HttpError(400, `snapshot.${key} is required`);
     }
   }
 
-  const numericKeys = ["level", "xp", "total_xp", "hunger", "energy", "mood"];
+  const numericKeys = ["hunger", "energy", "mood"];
   for (const key of numericKeys) {
     if (typeof snapshot[key] !== "number" || !Number.isFinite(snapshot[key])) {
       throw new HttpError(400, `snapshot.${key} must be a number`);
     }
   }
 
-  if (!Number.isInteger(snapshot.level) || snapshot.level < 1 || snapshot.level > MAX_SYNC_LEVEL) {
-    throw new HttpError(400, "snapshot.level is invalid");
-  }
-  if (!Number.isInteger(snapshot.xp) || snapshot.xp < 0) {
-    throw new HttpError(400, "snapshot.xp is invalid");
-  }
-  if (!Number.isInteger(snapshot.total_xp) || snapshot.total_xp < 0) {
-    throw new HttpError(400, "snapshot.total_xp is invalid");
-  }
-
   // Snapshot fields are profile-only and never drive ranked truth.
   // Ranked progression is derived exclusively from trusted ranked XP evidence.
-  const stage = normalizeProfileStage(snapshot.stage);
   const lastActiveAt = parseIsoTimestamp(snapshot.last_active_at, "snapshot.last_active_at");
 
   return {
     name: snapshot.name.trim().slice(0, 40),
-    level: snapshot.level,
-    xp: snapshot.xp,
-    total_xp: snapshot.total_xp,
-    stage,
     hunger: clamp(snapshot.hunger, 0, 100),
     energy: clamp(snapshot.energy, 0, 100),
     mood: clamp(snapshot.mood, 0, 100),
     last_active_at: lastActiveAt,
   };
-}
-
-function normalizeProfileStage(stage) {
-  const value = stage.trim();
-  if (!ALLOWED_STAGES.has(value)) {
-    throw new HttpError(400, "snapshot.stage is invalid");
-  }
-
-  return value;
 }
 
 function stageForLevel(level) {
@@ -956,7 +932,6 @@ export {
   extractBearerToken,
   evaluateSuspiciousSync,
   maxXpGainSince,
-  normalizeProfileStage,
   normalizeSeverity,
   parseSuspiciousSyncQuery,
   progressionFromTotalXp,

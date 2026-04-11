@@ -6,7 +6,6 @@ import {
   extractBearerToken,
   evaluateSuspiciousSync,
   maxXpGainSince,
-  normalizeProfileStage,
   normalizeSeverity,
   parseSuspiciousSyncQuery,
   progressionFromTotalXp,
@@ -133,26 +132,30 @@ test("normalizeSeverity rejects unsupported values", () => {
   assert.throws(() => normalizeSeverity("critical"), /severity must be one of: warn, high/);
 });
 
-test("validateProfileSnapshot accepts inconsistent local progression fields", () => {
+test("validateProfileSnapshot accepts profile-only snapshots", () => {
   const snapshot = validateProfileSnapshot({
     name: "Embit",
-    level: 99,
-    xp: 999,
-    total_xp: 1,
-    stage: "Baby",
     hunger: 80,
     energy: 75,
     mood: 90,
     last_active_at: "2026-04-11T22:00:00.000Z",
   });
 
-  assert.equal(snapshot.level, 99);
-  assert.equal(snapshot.xp, 999);
-  assert.equal(snapshot.total_xp, 1);
-  assert.equal(snapshot.stage, "Baby");
+  assert.equal(snapshot.name, "Embit");
+  assert.equal(snapshot.hunger, 80);
+  assert.equal(snapshot.energy, 75);
+  assert.equal(snapshot.mood, 90);
 });
 
-test("normalizeProfileStage still rejects invalid profile stages", () => {
-  assert.equal(normalizeProfileStage("Young"), "Young");
-  assert.throws(() => normalizeProfileStage("Legendary"), /snapshot.stage is invalid/);
+test("validateProfileSnapshot rejects missing profile fields", () => {
+  assert.throws(
+    () =>
+      validateProfileSnapshot({
+        name: "Embit",
+        hunger: 80,
+        energy: 75,
+        mood: 90,
+      }),
+    /snapshot.last_active_at is required/
+  );
 });

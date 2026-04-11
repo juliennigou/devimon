@@ -6,6 +6,10 @@ fn new_monster_id() -> String {
     Uuid::new_v4().to_string()
 }
 
+fn now_utc() -> DateTime<Utc> {
+    Utc::now()
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum Species {
     /// Fire line: Embit → Pyrofang → Infernox
@@ -93,6 +97,8 @@ pub struct Monster {
     pub last_played: DateTime<Utc>,
     pub last_rested: DateTime<Utc>,
     pub last_decay: DateTime<Utc>,
+    #[serde(default = "now_utc")]
+    pub last_mood_sample_at: DateTime<Utc>,
     pub last_active: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
 
@@ -126,6 +132,7 @@ impl Monster {
             last_played: long_ago,
             last_rested: long_ago,
             last_decay: now,
+            last_mood_sample_at: now,
             last_active: now,
             created_at: now,
             peak_hunger: 80.0,
@@ -191,15 +198,27 @@ impl Monster {
         let mood_decay = if self.hunger < 20.0 { 4.0 } else { 2.0 };
         self.set_mood(self.mood - mood_decay * elapsed_hours);
 
-        // Sample mood once per apply, cap the buffer at ~7 days of hourly samples.
-        self.mood_samples.push(self.mood);
+        self.sample_mood_history(now);
+
+        self.last_decay = now;
+        true
+    }
+
+    fn sample_mood_history(&mut self, now: DateTime<Utc>) {
+        let elapsed_sample_hours = (now - self.last_mood_sample_at).num_hours();
+        if elapsed_sample_hours <= 0 {
+            return;
+        }
+
+        for _ in 0..elapsed_sample_hours {
+            self.mood_samples.push(self.mood);
+        }
         if self.mood_samples.len() > 168 {
             let drop = self.mood_samples.len() - 168;
             self.mood_samples.drain(0..drop);
         }
 
-        self.last_decay = now;
-        true
+        self.last_mood_sample_at += chrono::Duration::hours(elapsed_sample_hours);
     }
 
     pub fn avg_mood(&self) -> f32 {
@@ -264,5 +283,29 @@ mod tests {
         monster.last_decay = Utc::now() - chrono::Duration::hours(1);
 
         assert!(monster.apply_decay());
+    }
+
+    #[test]
+    fn mood_history_samples_only_full_hours() {
+        let mut monster = Monster::spawn("Embit".to_string());
+        monster.mood_samples.clear();
+        let now = Utc::now();
+        monster.last_decay = now - chrono::Duration::minutes(30);
+        monster.last_mood_sample_at = now - chrono::Duration::minutes(30);
+
+        assert!(monster.apply_decay());
+        assert!(monster.mood_samples.is_empty());
+    }
+
+    #[test]
+    fn mood_history_adds_one_sample_per_elapsed_hour() {
+        let mut monster = Monster::spawn("Embit".to_string());
+        monster.mood_samples.clear();
+        let now = Utc::now();
+        monster.last_decay = now - chrono::Duration::hours(3);
+        monster.last_mood_sample_at = now - chrono::Duration::hours(3);
+
+        assert!(monster.apply_decay());
+        assert_eq!(monster.mood_samples.len(), 3);
     }
 }
