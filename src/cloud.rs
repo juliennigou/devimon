@@ -62,6 +62,7 @@ struct LoginPollRequest<'a> {
 struct SyncRequest<'a> {
     device_id: &'a str,
     monster_id: Option<&'a str>,
+    ranked_xp_delta: u32,
     snapshot: MonsterSnapshot,
 }
 
@@ -207,6 +208,7 @@ pub fn sync_state(state: &mut SaveFile) -> Result<SyncResponse, String> {
         .json(&SyncRequest {
             device_id: &state.cloud.device_id,
             monster_id,
+            ranked_xp_delta: state.cloud.pending_ranked_xp_delta,
             snapshot,
         })
         .send()
@@ -222,7 +224,11 @@ pub fn sync_state(state: &mut SaveFile) -> Result<SyncResponse, String> {
     state.cloud.last_accepted_xp_delta = sync.accepted_xp_delta;
     state.cloud.last_requested_xp_delta = sync.requested_xp_delta;
     state.cloud.last_max_accepted_xp_delta = sync.max_accepted_xp_delta;
-    state.cloud.sync_dirty = false;
+    if let Some(accepted) = sync.accepted_xp_delta {
+        state.cloud.pending_ranked_xp_delta =
+            state.cloud.pending_ranked_xp_delta.saturating_sub(accepted);
+    }
+    state.cloud.sync_dirty = state.cloud.pending_ranked_xp_delta > 0;
     Ok(sync)
 }
 

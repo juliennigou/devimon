@@ -38,6 +38,8 @@ pub struct CloudState {
     #[serde(default)]
     pub last_max_accepted_xp_delta: Option<u32>,
     #[serde(default)]
+    pub pending_ranked_xp_delta: u32,
+    #[serde(default)]
     pub sync_dirty: bool,
 }
 
@@ -55,6 +57,7 @@ impl Default for CloudState {
             last_accepted_xp_delta: None,
             last_requested_xp_delta: None,
             last_max_accepted_xp_delta: None,
+            pending_ranked_xp_delta: 0,
             sync_dirty: false,
         }
     }
@@ -292,6 +295,14 @@ pub fn mark_dirty(state: &mut SaveFile) {
     state.cloud.sync_dirty = true;
 }
 
+pub fn record_ranked_xp_delta(state: &mut SaveFile, delta: u32) {
+    if delta == 0 {
+        return;
+    }
+    state.cloud.pending_ranked_xp_delta = state.cloud.pending_ranked_xp_delta.saturating_add(delta);
+    mark_dirty(state);
+}
+
 pub fn clear_session(state: &mut SaveFile) {
     state.cloud.account = None;
     state.cloud.monster_id = None;
@@ -303,6 +314,7 @@ pub fn clear_session(state: &mut SaveFile) {
     state.cloud.last_accepted_xp_delta = None;
     state.cloud.last_requested_xp_delta = None;
     state.cloud.last_max_accepted_xp_delta = None;
+    state.cloud.pending_ranked_xp_delta = 0;
     state.cloud.sync_dirty = false;
 }
 

@@ -409,12 +409,19 @@ async function handleSync(request, env, session) {
   if (!body.snapshot || typeof body.snapshot !== "object" || Array.isArray(body.snapshot)) {
     throw new HttpError(400, "snapshot is required");
   }
+  if (
+    body.ranked_xp_delta !== undefined &&
+    (!Number.isInteger(body.ranked_xp_delta) || body.ranked_xp_delta < 0)
+  ) {
+    throw new HttpError(400, "ranked_xp_delta must be a non-negative integer");
+  }
 
   const deviceId = body.device_id.trim();
   const clientMonsterId =
     typeof body.monster_id === "string" && body.monster_id.trim()
       ? body.monster_id.trim()
       : null;
+  const rankedXpDelta = Number(body.ranked_xp_delta || 0);
   const snapshot = validateSnapshot(body.snapshot);
   const syncedAt = nowIso();
 
@@ -439,7 +446,7 @@ async function handleSync(request, env, session) {
 
   // Monster ownership is server-side: client-supplied IDs are ignored here.
   const monsterId = existing?.monster_id || crypto.randomUUID();
-  const rankedProgression = computeAcceptedRankedProgression(existing, snapshot.total_xp, syncedAt);
+  const rankedProgression = computeAcceptedRankedProgression(existing, rankedXpDelta, syncedAt);
 
   await env.DB.prepare(
     `INSERT INTO monsters (
@@ -511,6 +518,7 @@ async function handleSync(request, env, session) {
         client_monster_id: clientMonsterId,
         resolved_monster_id: canonicalMonster.monster_id,
         ranked_progression: rankedProgression,
+        ranked_xp_delta: rankedXpDelta,
         snapshot,
       })
     )
@@ -652,9 +660,9 @@ function progressionFromTotalXp(totalXp) {
   };
 }
 
-function computeAcceptedRankedProgression(existing, requestedTotalXp, syncedAt) {
+function computeAcceptedRankedProgression(existing, requestedXpDelta, syncedAt) {
   const previousTotalXp = Number(existing?.ranked_total_xp || 0);
-  const requestedDelta = Math.max(0, requestedTotalXp - previousTotalXp);
+  const requestedDelta = Math.max(0, requestedXpDelta);
   const maxAcceptedDelta = maxXpGainSince(existing?.updated_at, syncedAt);
   const acceptedDelta = Math.min(requestedDelta, maxAcceptedDelta);
   const trustedTotalXp = previousTotalXp + acceptedDelta;

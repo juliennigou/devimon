@@ -98,8 +98,11 @@ fn load_and_tick() -> Result<(SaveFile, u32), String> {
     let idx = state.active_monster_idx();
     let (decayed, xp_gained) =
         xp::tick_monster_progress(&mut state.monsters[idx]).map_err(|e| e.to_string())?;
-    if decayed || xp_gained > 0 {
+    if decayed {
         save::mark_dirty(&mut state);
+    }
+    if xp_gained > 0 {
+        save::record_ranked_xp_delta(&mut state, xp_gained);
     }
     if let Some(new_stage) = state.monsters[idx].check_evolution() {
         let name = state.monsters[idx].name.clone();
@@ -254,6 +257,16 @@ fn cmd_status() -> Result<(), String> {
         }
         if let Some(rank) = state.cloud.leaderboard_rank {
             println!("  {}", format!("Trusted rank: #{}", rank).bright_black());
+        }
+        if state.cloud.pending_ranked_xp_delta > 0 {
+            println!(
+                "  {}",
+                format!(
+                    "Pending ranked coding XP waiting for sync: +{}",
+                    state.cloud.pending_ranked_xp_delta
+                )
+                .bright_black()
+            );
         }
         if let (Some(requested), Some(accepted)) = (
             state.cloud.last_requested_xp_delta,
@@ -429,6 +442,12 @@ fn cmd_whoami() -> Result<(), String> {
     }
     if let Some(rank) = state.cloud.leaderboard_rank {
         println!("  Trusted Rank: #{}", rank);
+    }
+    if state.cloud.pending_ranked_xp_delta > 0 {
+        println!(
+            "  Pending Ranked Coding XP: +{}",
+            state.cloud.pending_ranked_xp_delta
+        );
     }
     if let (Some(requested), Some(accepted)) = (
         state.cloud.last_requested_xp_delta,

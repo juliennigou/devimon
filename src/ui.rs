@@ -507,8 +507,11 @@ fn tick(app: &mut AppState) -> io::Result<()> {
         let idx = state.active_monster_idx();
         let (decayed, xp_gained) =
             xp::tick_monster_progress(&mut state.monsters[idx]).unwrap_or((false, 0));
-        if decayed || xp_gained > 0 {
+        if decayed {
             save::mark_dirty(state);
+        }
+        if xp_gained > 0 {
+            save::record_ranked_xp_delta(state, xp_gained);
         }
         if let Some(new_stage) = state.monsters[idx].check_evolution() {
             let name = state.monsters[idx].name.clone();
@@ -1663,10 +1666,15 @@ fn draw_footer(f: &mut ratatui::Frame, area: Rect, state: &SaveFile) {
             (None, Some(level)) => format!(" · cloud lv.{}", level),
             (None, None) => String::new(),
         };
+        let pending = if state.cloud.pending_ranked_xp_delta > 0 {
+            format!(" · pending +{}", state.cloud.pending_ranked_xp_delta)
+        } else {
+            String::new()
+        };
         Line::from(vec![
             Span::styled("☁ ", Style::default().fg(Color::Cyan)),
             Span::styled(
-                format!("@{} · {}{}", account.username, suffix, trusted),
+                format!("@{} · {}{}{}", account.username, suffix, trusted, pending),
                 Style::default().fg(Color::DarkGray),
             ),
         ])
@@ -2215,9 +2223,15 @@ fn draw_settings(
                         requested, accepted
                     ),
                     (Some(_), Some(accepted)) => {
-                        format!("Last sync accept  +{} trusted XP", accepted)
+                        format!(
+                            "Last sync accept  +{} trusted XP  ·  pending +{}",
+                            accepted, state.cloud.pending_ranked_xp_delta
+                        )
                     }
-                    _ => "Last sync accept  waiting for first sync".to_string(),
+                    _ => format!(
+                        "Last sync accept  waiting for first sync  ·  pending +{}",
+                        state.cloud.pending_ranked_xp_delta
+                    ),
                 },
                 Style::default().fg(Color::DarkGray),
             )),
