@@ -73,14 +73,28 @@ function getInstallVariantConfig() {
   return INSTALL_VARIANTS[variant] || INSTALL_VARIANTS.unix;
 }
 
-function updateToggleSlider() {
+function updateToggleSlider({ disableTransition = false } = {}) {
   const switchEl = document.querySelector(".install-mode-switch");
-  if (!switchEl) return;
+  if (!switchEl) return false;
   const activeBtn = switchEl.querySelector(".install-mode-btn.active");
   const slider = switchEl.querySelector(".toggle-slider");
-  if (!activeBtn || !slider) return;
+  if (!activeBtn || !slider) return false;
+  if (!activeBtn.offsetWidth) return false;
+  if (disableTransition) {
+    slider.classList.add("toggle-slider--no-transition");
+  }
   slider.style.left = activeBtn.offsetLeft + "px";
   slider.style.width = activeBtn.offsetWidth + "px";
+  if (disableTransition) {
+    requestAnimationFrame(() => slider.classList.remove("toggle-slider--no-transition"));
+  }
+  return true;
+}
+
+function syncToggleSlider(options = {}) {
+  requestAnimationFrame(() => {
+    updateToggleSlider(options);
+  });
 }
 
 function renderInstallPanel() {
@@ -125,16 +139,32 @@ async function copyInstallCommand() {
 
 renderInstallPanel();
 
-// Defer slider init so layout is flushed before we read offsetLeft/offsetWidth.
-// The slider starts at width:0 in CSS (invisible), JS snaps it to the right
-// size without transition, then re-enables transition for subsequent clicks.
-setTimeout(() => {
-  const slider = document.querySelector(".toggle-slider");
-  if (!slider) return;
-  slider.classList.add("toggle-slider--no-transition");
-  updateToggleSlider();
-  requestAnimationFrame(() => slider.classList.remove("toggle-slider--no-transition"));
-}, 0);
+syncToggleSlider({ disableTransition: true });
+
+const installModeSwitchEl = document.querySelector(".install-mode-switch");
+const pageEl = document.querySelector("#page");
+
+if (installModeSwitchEl && "ResizeObserver" in window) {
+  const installModeResizeObserver = new ResizeObserver(() => {
+    updateToggleSlider();
+  });
+  installModeResizeObserver.observe(installModeSwitchEl);
+}
+
+if (pageEl && "MutationObserver" in window) {
+  const pageVisibilityObserver = new MutationObserver(() => {
+    if (pageEl.classList.contains("hidden")) return;
+    syncToggleSlider({ disableTransition: true });
+    pageVisibilityObserver.disconnect();
+  });
+  pageVisibilityObserver.observe(pageEl, { attributes: true, attributeFilter: ["class"] });
+}
+
+if (document.fonts?.ready) {
+  document.fonts.ready.then(() => {
+    updateToggleSlider({ disableTransition: true });
+  });
+}
 
 if (installCopyButton) {
   installCopyButton.addEventListener("click", () => {
@@ -163,6 +193,8 @@ installModeButtons.forEach((button) => {
     restartOnboarding();
   });
 });
+
+window.addEventListener("resize", () => updateToggleSlider());
 
 // ── Refresh ─────────────────────────────────────────────────────────────
 refreshButton.addEventListener("click", () => loadLeaderboard());
