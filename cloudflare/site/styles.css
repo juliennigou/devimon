@@ -390,43 +390,66 @@ pre {
     justify-content: space-between;
     gap: 12px;
     margin-bottom: 10px;
-}
-
-.install-panel-headline {
-    display: grid;
-    gap: 8px;
+    flex-wrap: wrap;
 }
 
 .install-panel-meta {
     display: flex;
     align-items: baseline;
+    gap: 8px;
+}
+
+.install-command-row {
+    display: flex;
+    align-items: stretch;
     gap: 10px;
-    flex-wrap: wrap;
 }
 
 .install-mode-switch {
+    position: relative;
     display: inline-flex;
     width: fit-content;
-    border: 1px solid rgba(0, 255, 136, 0.14);
+    border: 1px solid rgba(0, 255, 136, 0.18);
     border-radius: 999px;
-    background: rgba(4, 9, 7, 0.9);
-    overflow: hidden;
+    background: rgba(4, 9, 7, 0.95);
+    padding: 3px;
+    gap: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    height: calc(100% - 6px);
+    border-radius: 999px;
+    background: rgba(0, 255, 136, 0.18);
+    border: 1px solid rgba(0, 255, 136, 0.35);
+    pointer-events: none;
+    opacity: 0;
+    transition: left 0.2s cubic-bezier(0.4, 0, 0.2, 1), width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.toggle-slider--no-transition {
+    transition: none !important;
+}
+
+.toggle-slider--visible {
+    opacity: 1;
 }
 
 .install-mode-btn {
+    position: relative;
     border: 0;
-    border-right: 1px solid rgba(0, 255, 136, 0.1);
     background: transparent;
     color: var(--text-dim);
-    padding: 6px 12px;
+    padding: 5px 13px;
     font: inherit;
     font-size: 12px;
     cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease;
-}
-
-.install-mode-btn:last-child {
-    border-right: 0;
+    border-radius: 999px;
+    transition: color 0.15s ease;
+    z-index: 1;
+    white-space: nowrap;
 }
 
 .install-mode-btn:hover {
@@ -434,7 +457,6 @@ pre {
 }
 
 .install-mode-btn.active {
-    background: rgba(0, 255, 136, 0.14);
     color: var(--green);
 }
 
@@ -453,9 +475,15 @@ pre {
 
 .install-copy-btn {
     white-space: nowrap;
+    font-size: 12px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    align-self: center;
 }
 
 .install-command {
+    flex: 1;
+    min-width: 0;
     margin: 0;
     padding: 12px 14px;
     border: 1px solid rgba(0, 255, 136, 0.18);
@@ -924,9 +952,7 @@ tbody tr:hover {
     .install-panel-header {
         align-items: flex-start;
         flex-direction: column;
-    }
-    .install-panel-headline {
-        width: 100%;
+        gap: 8px;
     }
     .install-mode-switch {
         width: 100%;
@@ -934,8 +960,11 @@ tbody tr:hover {
     .install-mode-btn {
         flex: 1 1 0;
     }
+    .install-command-row {
+        display: block;
+    }
     .install-copy-btn {
-        width: 100%;
+        display: none;
     }
 
     /* Long commands wrap instead of overflow */

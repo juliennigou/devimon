@@ -73,6 +73,16 @@ function getInstallVariantConfig() {
   return INSTALL_VARIANTS[variant] || INSTALL_VARIANTS.unix;
 }
 
+function updateToggleSlider() {
+  const switchEl = document.querySelector(".install-mode-switch");
+  if (!switchEl) return;
+  const activeBtn = switchEl.querySelector(".install-mode-btn.active");
+  const slider = switchEl.querySelector(".toggle-slider");
+  if (!activeBtn || !slider) return;
+  slider.style.left = activeBtn.offsetLeft + "px";
+  slider.style.width = activeBtn.offsetWidth + "px";
+}
+
 function renderInstallPanel() {
   const config = getInstallVariantConfig();
   if (installCommandEl) installCommandEl.textContent = config.command;
@@ -84,6 +94,7 @@ function renderInstallPanel() {
   installModeButtons.forEach((button) => {
     button.classList.toggle("active", button.dataset.installMode === currentInstallMode);
   });
+  updateToggleSlider();
 }
 
 function fallbackCopyText(text) {
@@ -114,6 +125,19 @@ async function copyInstallCommand() {
 }
 
 renderInstallPanel();
+// Position slider once layout is fully painted, then reveal it
+window.addEventListener("load", () => {
+  const slider = document.querySelector(".toggle-slider");
+  if (slider) slider.classList.add("toggle-slider--no-transition");
+  updateToggleSlider();
+  // Re-enable transition on next frame so subsequent clicks animate
+  requestAnimationFrame(() => {
+    if (slider) {
+      slider.classList.remove("toggle-slider--no-transition");
+      slider.classList.add("toggle-slider--visible");
+    }
+  });
+});
 
 if (installCopyButton) {
   installCopyButton.addEventListener("click", () => {

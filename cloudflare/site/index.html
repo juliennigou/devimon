@@ -36,8 +36,14 @@
                     </a>
                     <div class="nav-links">
                         <a
-                            href="#leaderboard"
+                            href="#"
                             class="nav-link active"
+                            data-i18n="nav.home"
+                            >Home</a
+                        >
+                        <a
+                            href="#leaderboard"
+                            class="nav-link"
                             data-i18n="nav.leaderboard"
                             >Leaderboard</a
                         >
@@ -78,38 +84,40 @@
             <header class="hero-terminal">
                 <div class="install-panel">
                     <div class="install-panel-header">
-                        <div class="install-panel-headline">
-                            <div class="install-panel-meta">
-                                <span class="install-label" data-i18n="install.label">Install</span>
-                                <span class="install-os" id="install-os-label">macOS / Linux</span>
-                            </div>
-                            <div class="install-mode-switch" aria-label="Platform preview">
-                                <button
-                                    class="install-mode-btn active"
-                                    type="button"
-                                    data-install-mode="auto"
-                                    data-i18n="install.mode.auto"
-                                >
-                                    Auto
-                                </button>
-                                <button
-                                    class="install-mode-btn"
-                                    type="button"
-                                    data-install-mode="unix"
-                                    data-i18n="install.mode.unix"
-                                >
-                                    Unix
-                                </button>
-                                <button
-                                    class="install-mode-btn"
-                                    type="button"
-                                    data-install-mode="windows"
-                                    data-i18n="install.mode.windows"
-                                >
-                                    Windows
-                                </button>
-                            </div>
+                        <div class="install-panel-meta">
+                            <span class="install-label" data-i18n="install.label">Install</span>
+                            <span class="install-os" id="install-os-label">macOS / Linux</span>
                         </div>
+                        <div class="install-mode-switch" aria-label="Platform preview">
+                            <span class="toggle-slider" aria-hidden="true"></span>
+                            <button
+                                class="install-mode-btn active"
+                                type="button"
+                                data-install-mode="auto"
+                                data-i18n="install.mode.auto"
+                            >
+                                Auto
+                            </button>
+                            <button
+                                class="install-mode-btn"
+                                type="button"
+                                data-install-mode="unix"
+                                data-i18n="install.mode.unix"
+                            >
+                                Unix
+                            </button>
+                            <button
+                                class="install-mode-btn"
+                                type="button"
+                                data-install-mode="windows"
+                                data-i18n="install.mode.windows"
+                            >
+                                Windows
+                            </button>
+                        </div>
+                    </div>
+                    <div class="install-command-row">
+                        <pre class="install-command" id="install-command"></pre>
                         <button
                             id="install-copy-button"
                             class="btn-terminal install-copy-btn"
@@ -119,7 +127,6 @@
                             [Copy]
                         </button>
                     </div>
-                    <pre class="install-command" id="install-command"></pre>
                     <div class="install-hint" id="install-hint" data-i18n="install.hint.unix">
                         Uses the shell installer for Unix environments.
                     </div>

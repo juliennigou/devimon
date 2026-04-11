@@ -1,5 +1,6 @@
 const translations = {
   en: {
+    "nav.home": "Home",
     "nav.leaderboard": "Leaderboard",
     "nav.about": "About",
     "stats.players": "Players",
@@ -45,6 +46,7 @@ const translations = {
     "footer.updated": "Last updated:",
   },
   fr: {
+    "nav.home": "Accueil",
     "nav.leaderboard": "Classement",
     "nav.about": "À propos",
     "stats.players": "Joueurs",
