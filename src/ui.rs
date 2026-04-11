@@ -18,7 +18,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Gauge, Paragraph, block::Title},
+    widgets::{Block, Borders, Clear, Gauge, Paragraph, Wrap, block::Title},
 };
 use std::io::{self, Stdout};
 use std::sync::mpsc;
@@ -121,6 +121,8 @@ enum AppState {
     StartupChoice {
         state: SaveFile,
         mode: StartupChoiceMode,
+        cursor: usize,
+        animation_tick: u64,
     },
     OnboardingIntro {
         animation_tick: u64,
@@ -144,6 +146,7 @@ enum AppState {
         state: SaveFile,
         login: cloud::StartLoginResponse,
         result_rx: mpsc::Receiver<Result<cloud::AccountEnvelope, String>>,
+        animation_tick: u64,
     },
     Running {
         state: SaveFile,
@@ -271,6 +274,8 @@ fn initial_state() -> io::Result<AppState> {
                 Ok(AppState::StartupChoice {
                     state,
                     mode: StartupChoiceMode::Returning,
+                    cursor: 0,
+                    animation_tick: 0,
                 })
             } else {
                 Ok(make_running_state(
@@ -327,6 +332,53 @@ fn starter_default_name(species: Species) -> &'static str {
         Species::Devimon => "Devi",
         Species::Dragon => "Drako",
         Species::Slime => "Gloop",
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum Element {
+    Fire,
+    Water,
+    Grass,
+}
+
+fn starter_element(species: Species) -> Element {
+    match species {
+        Species::Devimon => Element::Fire,
+        Species::Dragon => Element::Water,
+        Species::Slime => Element::Grass,
+    }
+}
+
+fn element_label(element: Element) -> &'static str {
+    match element {
+        Element::Fire => "FIRE",
+        Element::Water => "WATER",
+        Element::Grass => "GRASS",
+    }
+}
+
+fn element_accent(element: Element) -> Color {
+    match element {
+        Element::Fire => Color::LightRed,
+        Element::Water => Color::LightCyan,
+        Element::Grass => Color::LightGreen,
+    }
+}
+
+fn element_deep(element: Element) -> Color {
+    match element {
+        Element::Fire => Color::Rgb(20, 0, 0),
+        Element::Water => Color::Rgb(0, 15, 45),
+        Element::Grass => Color::Rgb(0, 18, 5),
+    }
+}
+
+fn element_tagline(element: Element) -> &'static str {
+    match element {
+        Element::Fire => "Burning will. Bursts of intensity.",
+        Element::Water => "Flowing focus. Calm under load.",
+        Element::Grass => "Steady growth. Roots that hold.",
     }
 }
 
@@ -488,6 +540,8 @@ fn animate(app: &mut AppState) {
         | AppState::OnboardingEggSelect { animation_tick, .. }
         | AppState::OnboardingName { animation_tick, .. }
         | AppState::OnboardingConfirm { animation_tick, .. }
+        | AppState::StartupChoice { animation_tick, .. }
+        | AppState::LoginFlow { animation_tick, .. }
         | AppState::Running { animation_tick, .. } => {
             *animation_tick = animation_tick.wrapping_add(1);
         }
@@ -548,6 +602,31 @@ fn step_dino(app: &mut AppState) {
 
 // ── Input ─────────────────────────────────────────────────────────────────────
 
+fn start_login_flow(app: &mut AppState, state: SaveFile) {
+    match cloud::start_login() {
+        Ok(login) => {
+            let (tx, rx) = mpsc::channel();
+            spawn_login_poller(login.login_id.clone(), login.interval_seconds, tx);
+            *app = AppState::LoginFlow {
+                state,
+                login,
+                result_rx: rx,
+                animation_tick: 0,
+            };
+        }
+        Err(e) => {
+            *app = make_running_state(
+                state,
+                Some(Flash {
+                    message: format!("Impossible de démarrer la connexion: {}", e),
+                    kind: FlashKind::Error,
+                    created_at: Instant::now(),
+                }),
+            );
+        }
+    }
+}
+
 fn persist_and_quit(app: &mut AppState) {
     let to_save: Option<SaveFile> = match app {
         AppState::Running { state, .. } => Some(state.clone()),
@@ -571,34 +650,25 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> io::Result<()> {
     }
 
     match app {
-        AppState::StartupChoice { state, .. } => match code {
+        AppState::StartupChoice { state, cursor, .. } => match code {
             _ if key.kind == KeyEventKind::Release => {}
+            KeyCode::Left | KeyCode::Right | KeyCode::Tab => {
+                *cursor = 1 - *cursor;
+            }
             KeyCode::Char('l') => {
                 let state_owned = state.clone();
-                match cloud::start_login() {
-                    Ok(login) => {
-                        let (tx, rx) = mpsc::channel();
-                        spawn_login_poller(login.login_id.clone(), login.interval_seconds, tx);
-                        *app = AppState::LoginFlow {
-                            state: state_owned,
-                            login,
-                            result_rx: rx,
-                        };
-                    }
-                    Err(e) => {
-                        *app = make_running_state(
-                            state_owned,
-                            Some(Flash {
-                                message: format!("Impossible de démarrer la connexion: {}", e),
-                                kind: FlashKind::Error,
-                                created_at: Instant::now(),
-                            }),
-                        );
-                    }
-                }
+                start_login_flow(app, state_owned);
             }
-            KeyCode::Enter | KeyCode::Char('n') | KeyCode::Char(' ') => {
+            KeyCode::Char('n') => {
                 *app = make_running_state(state.clone(), None);
+            }
+            KeyCode::Enter | KeyCode::Char(' ') => {
+                if *cursor == 0 {
+                    let state_owned = state.clone();
+                    start_login_flow(app, state_owned);
+                } else {
+                    *app = make_running_state(state.clone(), None);
+                }
             }
             KeyCode::Esc | KeyCode::Char('q') => persist_and_quit(app),
             _ => {}
@@ -711,6 +781,8 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> io::Result<()> {
                     *app = AppState::StartupChoice {
                         state,
                         mode: StartupChoiceMode::FirstLaunch,
+                        cursor: 0,
+                        animation_tick: 0,
                     };
                 } else {
                     *app = AppState::OnboardingName {
@@ -1136,7 +1208,12 @@ fn draw(f: &mut ratatui::Frame, app: &AppState) {
     f.render_widget(outer, f.area());
 
     match app {
-        AppState::StartupChoice { state, mode } => draw_startup_choice(f, inner, state, *mode),
+        AppState::StartupChoice {
+            state,
+            mode,
+            cursor,
+            animation_tick,
+        } => draw_startup_choice(f, inner, state, *mode, *cursor, *animation_tick),
         AppState::OnboardingIntro { animation_tick } => {
             draw_onboarding_intro(f, inner, *animation_tick)
         }
@@ -1162,7 +1239,11 @@ fn draw(f: &mut ratatui::Frame, app: &AppState) {
             *confirm_choice,
             *animation_tick,
         ),
-        AppState::LoginFlow { login, .. } => draw_login_flow(f, inner, login),
+        AppState::LoginFlow {
+            login,
+            animation_tick,
+            ..
+        } => draw_login_flow(f, inner, login, *animation_tick),
         AppState::Running {
             state,
             flash,
@@ -2343,115 +2424,632 @@ fn draw_startup_choice(
     area: Rect,
     state: &SaveFile,
     mode: StartupChoiceMode,
+    cursor: usize,
+    tick: u64,
 ) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(13),
-            Constraint::Min(0),
-        ])
-        .split(area);
-
+    let monster_name = &state.active_monster().name;
     let (headline, subline) = match mode {
         StartupChoiceMode::FirstLaunch => (
-            format!("🥚 {} a éclos !", state.active_monster().name),
-            "Veux-tu lancer ta première aventure en ligne ou hors ligne ?".to_string(),
+            format!("◆  {} has hatched  ◆", monster_name),
+            "Pick how you want to play. You can change this later.",
         ),
         StartupChoiceMode::Returning => (
-            format!("👋 Bon retour, {} !", state.active_monster().name),
-            "Rejoindre le classement en ligne ?".to_string(),
+            format!("◆  Welcome back, {}  ◆", monster_name),
+            "Sync your monster online or keep coding solo.",
         ),
     };
 
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(13),
+            Constraint::Length(2),
+        ])
+        .split(area);
+
     f.render_widget(
         Paragraph::new(vec![
-            Line::from(""),
             Line::from(Span::styled(
                 headline,
                 Style::default()
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             )),
-            Line::from(""),
-            Line::from(Span::styled(subline, Style::default().fg(Color::Cyan))),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled(" l ", Style::default().bg(Color::DarkGray).fg(Color::Cyan)),
-                Span::styled("  Login via GitHub", Style::default().fg(Color::White)),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled(" n ", Style::default().bg(Color::DarkGray).fg(Color::White)),
-                Span::styled("  Rester hors ligne", Style::default().fg(Color::DarkGray)),
-            ]),
-            Line::from(""),
-            Line::from(""),
             Line::from(Span::styled(
-                "[Entrée] hors ligne    [q] quitter",
+                subline,
                 Style::default().fg(Color::DarkGray),
             )),
         ])
         .alignment(Alignment::Center),
-        chunks[1],
+        rows[0],
+    );
+
+    let cards_area = rows[1];
+    let card_width = 38u16.min(cards_area.width / 2);
+    let total = card_width * 2 + 4;
+    let pad = cards_area.width.saturating_sub(total) / 2;
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(pad),
+            Constraint::Length(card_width),
+            Constraint::Length(4),
+            Constraint::Length(card_width),
+            Constraint::Min(0),
+        ])
+        .split(cards_area);
+
+    draw_startup_card(
+        f,
+        cols[1],
+        StartupOption::Online,
+        cursor == 0,
+        tick,
+    );
+    draw_startup_card(
+        f,
+        cols[3],
+        StartupOption::Offline,
+        cursor == 1,
+        tick,
+    );
+
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            "← →  switch    Enter  confirm    l  online    n  offline    q  quit",
+            Style::default().fg(Color::DarkGray),
+        ))
+        .alignment(Alignment::Center),
+        rows[2],
     );
 }
 
-fn draw_login_flow(f: &mut ratatui::Frame, area: Rect, login: &cloud::StartLoginResponse) {
-    let chunks = Layout::default()
+#[derive(Copy, Clone)]
+enum StartupOption {
+    Online,
+    Offline,
+}
+
+fn draw_startup_card(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    option: StartupOption,
+    selected: bool,
+    tick: u64,
+) {
+    if area.width < 10 || area.height < 6 {
+        return;
+    }
+
+    let (accent, title, hotkey, headline, perks) = match option {
+        StartupOption::Online => (
+            Color::LightCyan,
+            " ☁  ONLINE  ",
+            "L",
+            "Sync to the cloud",
+            [
+                "● GitHub login (device flow)",
+                "● Climb the global ladder",
+                "● Backup across machines",
+            ],
+        ),
+        StartupOption::Offline => (
+            Color::LightYellow,
+            " ◐  OFFLINE  ",
+            "N",
+            "Keep it local",
+            [
+                "● No account, no network",
+                "● Save stays on this machine",
+                "● Switch online any time",
+            ],
+        ),
+    };
+
+    let border_color = if selected { accent } else { Color::DarkGray };
+    let title_style = Style::default()
+        .fg(if selected { accent } else { Color::Gray })
+        .add_modifier(Modifier::BOLD);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(
+            Style::default().fg(border_color).add_modifier(if selected {
+                Modifier::BOLD
+            } else {
+                Modifier::empty()
+            }),
+        )
+        .title(Span::styled(title, title_style))
+        .title_alignment(Alignment::Center);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    if inner.height < 5 {
+        return;
+    }
+
+    // Banner row at top — animated for selection
+    let banner = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: 3.min(inner.height),
+    };
+    if selected {
+        let buf = f.buffer_mut();
+        for dy in 0..banner.height {
+            for dx in 0..banner.width {
+                let n = ((dx as i64 + (tick as i64) / 2) + dy as i64 * 3).rem_euclid(8);
+                let ch = match n {
+                    0 => '·',
+                    1 => '∙',
+                    2 => '◦',
+                    3 => '•',
+                    _ => ' ',
+                };
+                let cell = &mut buf[(banner.x + dx, banner.y + dy)];
+                cell.set_char(ch);
+                cell.set_fg(accent);
+                cell.set_bg(Color::Black);
+            }
+        }
+        let icon = match option {
+            StartupOption::Online => {
+                if (tick / 6) % 2 == 0 {
+                    "  ☁  ☁    ☁  "
+                } else {
+                    "    ☁  ☁  ☁  "
+                }
+            }
+            StartupOption::Offline => "    ◐ ◑ ◒ ◓    ",
+        };
+        let icon_w = icon.chars().count() as u16;
+        let icon_x = banner.x + banner.width.saturating_sub(icon_w) / 2;
+        let icon_y = banner.y + banner.height / 2;
+        f.buffer_mut().set_string(
+            icon_x,
+            icon_y,
+            icon,
+            Style::default()
+                .fg(Color::White)
+                .bg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        );
+    } else {
+        let buf = f.buffer_mut();
+        for dy in 0..banner.height {
+            for dx in 0..banner.width {
+                let cell = &mut buf[(banner.x + dx, banner.y + dy)];
+                cell.set_char(' ');
+                cell.set_bg(Color::Rgb(15, 15, 18));
+            }
+        }
+        let icon = match option {
+            StartupOption::Online => "  ☁  ",
+            StartupOption::Offline => "  ◐  ",
+        };
+        let icon_w = icon.chars().count() as u16;
+        let icon_x = banner.x + banner.width.saturating_sub(icon_w) / 2;
+        let icon_y = banner.y + banner.height / 2;
+        f.buffer_mut().set_string(
+            icon_x,
+            icon_y,
+            icon,
+            Style::default().fg(Color::DarkGray).bg(Color::Rgb(15, 15, 18)),
+        );
+    }
+
+    // Body region
+    let body = Rect {
+        x: inner.x,
+        y: inner.y + banner.height,
+        width: inner.width,
+        height: inner.height - banner.height,
+    };
+    let body_rows = Layout::default()
         .direction(Direction::Vertical)
+        .margin(0)
         .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(perks.len() as u16),
             Constraint::Min(0),
-            Constraint::Length(13),
-            Constraint::Min(0),
+            Constraint::Length(1),
         ])
-        .split(area);
+        .split(body);
 
     f.render_widget(
-        Paragraph::new(vec![
-            Line::from(""),
+        Paragraph::new(Span::styled(
+            headline,
+            Style::default()
+                .fg(if selected { Color::White } else { Color::Gray })
+                .add_modifier(Modifier::BOLD),
+        ))
+        .alignment(Alignment::Center),
+        body_rows[0],
+    );
+
+    let perk_lines: Vec<Line> = perks
+        .iter()
+        .map(|p| {
             Line::from(Span::styled(
-                "☁️  Connexion à Devimon Cloud",
+                (*p).to_string(),
+                Style::default().fg(if selected { accent } else { Color::DarkGray }),
+            ))
+        })
+        .collect();
+    f.render_widget(
+        Paragraph::new(perk_lines).alignment(Alignment::Center),
+        body_rows[2],
+    );
+
+    let action_style = if selected {
+        Style::default()
+            .fg(Color::Black)
+            .bg(accent)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Gray)
+    };
+    let action_text = if selected {
+        format!("  ▶  ENTER to {}  ◀  ", match option {
+            StartupOption::Online => "go online",
+            StartupOption::Offline => "go offline",
+        })
+    } else {
+        format!("  press {}  ", hotkey)
+    };
+    f.render_widget(
+        Paragraph::new(Span::styled(action_text, action_style))
+            .alignment(Alignment::Center),
+        body_rows[4],
+    );
+}
+
+fn draw_login_flow(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    login: &cloud::StartLoginResponse,
+    tick: u64,
+) {
+    let card = center_rect_with_size(area, 60.min(area.width), 18.min(area.height));
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(
+            Style::default()
+                .fg(Color::LightCyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .title(Span::styled(
+            " ☁  CONNECTING TO DEVIMON CLOUD  ☁ ",
+            Style::default()
+                .fg(Color::LightCyan)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .title_alignment(Alignment::Center);
+    let inner = block.inner(card);
+    f.render_widget(block, card);
+
+    if inner.height < 8 {
+        return;
+    }
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(2),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    // Step 1: open URL
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                " 1 ",
                 Style::default()
-                    .fg(Color::Magenta)
+                    .fg(Color::Black)
+                    .bg(Color::LightCyan)
                     .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                "Ouvre cette URL dans ton navigateur :",
-                Style::default().fg(Color::White),
-            )),
-            Line::from(Span::styled(
-                login.verification_uri.clone(),
+            ),
+            Span::raw("  Open this URL in your browser"),
+        ]))
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(Color::White)),
+        rows[0],
+    );
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            login.verification_uri.clone(),
+            Style::default()
+                .fg(Color::LightCyan)
+                .add_modifier(Modifier::UNDERLINED | Modifier::BOLD),
+        ))
+        .alignment(Alignment::Center),
+        rows[1],
+    );
+
+    // Step 2: enter code
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                " 2 ",
                 Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::UNDERLINED),
-            )),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("Code :  ", Style::default().fg(Color::White)),
-                Span::styled(
-                    login.user_code.clone(),
+                    .fg(Color::Black)
+                    .bg(Color::LightCyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  Enter this code"),
+        ]))
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(Color::White)),
+        rows[3],
+    );
+
+    // Code pill — pulsing
+    let pulse = (tick / 8) % 2 == 0;
+    let code_style = if pulse {
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::LightYellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(Color::LightYellow)
+            .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+    };
+    let code_text = format!("   {}   ", login.user_code);
+    f.render_widget(
+        Paragraph::new(Span::styled(code_text, code_style)).alignment(Alignment::Center),
+        rows[4],
+    );
+
+    // Spinner waiting indicator
+    let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    let spinner = frames[(tick as usize / 2) % frames.len()];
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                spinner,
+                Style::default()
+                    .fg(Color::LightCyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                "Waiting for GitHub authorization…",
+                Style::default().fg(Color::Gray),
+            ),
+        ]))
+        .alignment(Alignment::Center),
+        rows[6],
+    );
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            "Tip: keep this terminal open while you authorize.",
+            Style::default().fg(Color::DarkGray),
+        ))
+        .alignment(Alignment::Center),
+        rows[7],
+    );
+
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            "Esc · cancel",
+            Style::default().fg(Color::DarkGray),
+        ))
+        .alignment(Alignment::Center),
+        rows[9],
+    );
+}
+
+fn hash3(a: i64, b: i64, c: i64) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for v in [a, b, c] {
+        h ^= v as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+fn element_cell(element: Element, x: i64, y: i64, _w: i64, h: i64, tick: u64) -> (char, Style) {
+    match element {
+        Element::Fire => {
+            let t = (tick / 2) as i64;
+            let n = (hash3(x, y + t, 11) % 100) as i64;
+            let bottom_dist = (h - 1 - y).max(0);
+            let heat = 100 - bottom_dist * 80 / h.max(1) - n / 3;
+            if heat > 75 {
+                (
+                    '▲',
+                    Style::default()
+                        .fg(Color::LightYellow)
+                        .bg(Color::Rgb(200, 50, 0)),
+                )
+            } else if heat > 55 {
+                (
+                    '▴',
                     Style::default()
                         .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ]),
-            Line::from(""),
-            Line::from(Span::styled(
-                "En attente d'autorisation…",
-                Style::default().fg(Color::DarkGray),
-            )),
-            Line::from(""),
-            Line::from(""),
-            Line::from(Span::styled(
-                "[q] Annuler",
-                Style::default().fg(Color::DarkGray),
-            )),
-        ])
-        .alignment(Alignment::Center),
-        chunks[1],
-    );
+                        .bg(Color::Rgb(140, 25, 0)),
+                )
+            } else if heat > 35 {
+                (
+                    '*',
+                    Style::default().fg(Color::Red).bg(Color::Rgb(70, 5, 0)),
+                )
+            } else if heat > 15 {
+                (
+                    '.',
+                    Style::default()
+                        .fg(Color::Rgb(180, 60, 0))
+                        .bg(Color::Rgb(35, 0, 0)),
+                )
+            } else {
+                (' ', Style::default().bg(Color::Rgb(15, 0, 0)))
+            }
+        }
+        Element::Water => {
+            let t = tick as f32 * 0.25;
+            let v = (x as f32 * 0.45 + t).sin() + (y as f32 * 0.7 - t * 0.6).cos();
+            let n = (hash3(x, y, (tick / 6) as i64) % 100) as i64;
+            let val = (v * 30.0) as i64 + 50 + n / 12;
+            if val > 78 {
+                (
+                    '≈',
+                    Style::default()
+                        .fg(Color::White)
+                        .bg(Color::Rgb(0, 70, 150)),
+                )
+            } else if val > 58 {
+                (
+                    '~',
+                    Style::default()
+                        .fg(Color::LightCyan)
+                        .bg(Color::Rgb(0, 45, 115)),
+                )
+            } else if val > 38 {
+                (
+                    '-',
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .bg(Color::Rgb(0, 28, 85)),
+                )
+            } else if val > 20 {
+                (
+                    '·',
+                    Style::default()
+                        .fg(Color::Blue)
+                        .bg(Color::Rgb(0, 18, 60)),
+                )
+            } else {
+                (' ', Style::default().bg(Color::Rgb(0, 12, 45)))
+            }
+        }
+        Element::Grass => {
+            let sway = ((x as f32 * 0.35 + tick as f32 * 0.15).sin() * 1.5) as i64;
+            let n = (hash3(x + sway, y, 7) % 100) as i64;
+            let bottom_dist = (h - 1 - y).max(0);
+            if bottom_dist == 0 {
+                (
+                    '▒',
+                    Style::default()
+                        .fg(Color::Green)
+                        .bg(Color::Rgb(25, 70, 25)),
+                )
+            } else if bottom_dist <= 1 + (n % 3) {
+                let blade = match (n + sway).rem_euclid(4) {
+                    0 => '|',
+                    1 => '/',
+                    2 => '\\',
+                    _ => 'V',
+                };
+                (
+                    blade,
+                    Style::default()
+                        .fg(Color::LightGreen)
+                        .bg(Color::Rgb(0, 30, 5)),
+                )
+            } else if n < 2 {
+                (
+                    '❀',
+                    Style::default()
+                        .fg(Color::LightMagenta)
+                        .bg(Color::Rgb(0, 22, 5)),
+                )
+            } else if n < 8 {
+                (
+                    '"',
+                    Style::default()
+                        .fg(Color::Green)
+                        .bg(Color::Rgb(0, 18, 5)),
+                )
+            } else {
+                (' ', Style::default().bg(Color::Rgb(0, 14, 5)))
+            }
+        }
+    }
+}
+
+fn render_element_background(f: &mut ratatui::Frame, area: Rect, element: Element, tick: u64) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let buf = f.buffer_mut();
+    let w = area.width as i64;
+    let h = area.height as i64;
+    for dy in 0..area.height {
+        for dx in 0..area.width {
+            let (ch, style) = element_cell(element, dx as i64, dy as i64, w, h, tick);
+            let cell = &mut buf[(area.x + dx, area.y + dy)];
+            cell.set_char(ch);
+            cell.set_style(style);
+        }
+    }
+}
+
+fn render_egg_overlay(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    species: Species,
+    selected: bool,
+    tick: u64,
+) {
+    let art = starter_egg_art(species, selected, tick);
+    if art.is_empty() || area.width == 0 || area.height == 0 {
+        return;
+    }
+    let art_h = art.len() as u16;
+    let art_w = art
+        .iter()
+        .map(|s| s.chars().count() as u16)
+        .max()
+        .unwrap_or(0);
+    let start_y = area.y + area.height.saturating_sub(art_h) / 2;
+    let start_x = area.x + area.width.saturating_sub(art_w) / 2;
+    let element = starter_element(species);
+    let buf = f.buffer_mut();
+    let outline = if selected {
+        Color::White
+    } else {
+        Color::Gray
+    };
+    let accent = element_accent(element);
+    for (dy, row) in art.iter().enumerate() {
+        for (dx, ch) in row.chars().enumerate() {
+            if ch == ' ' {
+                continue;
+            }
+            let x = start_x + dx as u16;
+            let y = start_y + dy as u16;
+            if x >= area.x + area.width || y >= area.y + area.height {
+                continue;
+            }
+            let fg = match ch {
+                'o' | '>' | '<' | '^' | '~' | '.' => accent,
+                _ => outline,
+            };
+            let cell = &mut buf[(x, y)];
+            cell.set_char(ch);
+            cell.set_fg(fg);
+            if selected {
+                let style = cell.style().add_modifier(Modifier::BOLD);
+                cell.set_style(style);
+            }
+        }
+    }
 }
 
 fn draw_onboarding_intro(f: &mut ratatui::Frame, area: Rect, animation_tick: u64) {
@@ -2459,47 +3057,63 @@ fn draw_onboarding_intro(f: &mut ratatui::Frame, area: Rect, animation_tick: u64
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(0),
-            Constraint::Length(18),
+            Constraint::Length(20),
             Constraint::Min(0),
         ])
         .split(area);
 
+    let pulse = (animation_tick / 8) % 3;
+    let title_color = match pulse {
+        0 => Color::LightMagenta,
+        1 => Color::LightCyan,
+        _ => Color::LightYellow,
+    };
+
     let start_style = if (animation_tick / 10).is_multiple_of(2) {
         Style::default()
             .fg(Color::Black)
-            .bg(Color::Magenta)
+            .bg(Color::LightMagenta)
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default()
-            .fg(Color::White)
-            .bg(Color::DarkGray)
-            .add_modifier(Modifier::BOLD)
+            .fg(Color::LightMagenta)
+            .add_modifier(Modifier::BOLD | Modifier::REVERSED)
     };
 
     let mut lines = vec![Line::from("")];
     for row in onboarding_title_art() {
         lines.push(Line::from(Span::styled(
             (*row).to_string(),
-            Style::default()
-                .fg(Color::Magenta)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(title_color).add_modifier(Modifier::BOLD),
         )));
     }
     lines.extend([
         Line::from(""),
+        Line::from(vec![
+            Span::styled(
+                "◆ ",
+                Style::default().fg(Color::LightMagenta),
+            ),
+            Span::styled(
+                "A monster grows from your code.",
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                " ◆",
+                Style::default().fg(Color::LightMagenta),
+            ),
+        ]),
         Line::from(Span::styled(
-            "Code to help your monster grow. Climb the ladder through real progress.",
-            Style::default().fg(Color::White),
-        )),
-        Line::from(Span::styled(
-            "Feed it, train it, then send it into battle when you're ready.",
-            Style::default().fg(Color::DarkGray),
+            "Hatch an egg, feed it, train it, climb the ladder.",
+            Style::default().fg(Color::Gray),
         )),
         Line::from(""),
-        Line::from(Span::styled("   START   ", start_style)),
+        Line::from(Span::styled("   ▶  PRESS ENTER TO BEGIN  ◀   ", start_style)),
         Line::from(""),
         Line::from(Span::styled(
-            "[Enter] continue    [Esc] quit",
+            "Enter · start    Esc · quit",
             Style::default().fg(Color::DarkGray),
         )),
     ]);
@@ -2521,7 +3135,7 @@ fn draw_onboarding_egg_select(
         .margin(1)
         .constraints([
             Constraint::Length(3),
-            Constraint::Min(12),
+            Constraint::Min(14),
             Constraint::Length(2),
         ])
         .split(area);
@@ -2529,13 +3143,13 @@ fn draw_onboarding_egg_select(
     f.render_widget(
         Paragraph::new(vec![
             Line::from(Span::styled(
-                "Choose your starter egg",
+                "◆  CHOOSE YOUR STARTER EGG  ◆",
                 Style::default()
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             )),
             Line::from(Span::styled(
-                "Use the arrow keys to browse the three species, then press Enter to hatch one.",
+                "Three eggs. Three elements. Pick the one that calls to you.",
                 Style::default().fg(Color::DarkGray),
             )),
         ])
@@ -2554,69 +3168,116 @@ fn draw_onboarding_egg_select(
 
     for (index, species) in STARTER_SPECIES.iter().copied().enumerate() {
         let selected = index == cursor;
+        let element = starter_element(species);
+        let accent = element_accent(element);
+        let card_area = cols[index];
+
+        let border_color = if selected { accent } else { Color::DarkGray };
+        let title_text = if selected {
+            format!(" ◆ {} ◆ ", element_label(element))
+        } else {
+            format!("  {}  ", element_label(element))
+        };
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(if selected {
-                Color::Magenta
-            } else {
-                Color::DarkGray
-            }))
-            .title(if selected { " Selected " } else { " Starter " });
-        let inner = block.inner(cols[index]);
-        f.render_widget(block, cols[index]);
+            .border_style(
+                Style::default()
+                    .fg(border_color)
+                    .add_modifier(if selected {
+                        Modifier::BOLD
+                    } else {
+                        Modifier::empty()
+                    }),
+            )
+            .title(Span::styled(
+                title_text,
+                Style::default().fg(if selected {
+                    accent
+                } else {
+                    Color::Gray
+                }).add_modifier(Modifier::BOLD),
+            ))
+            .title_alignment(Alignment::Center);
+        let inner = block.inner(card_area);
+        f.render_widget(block, card_area);
 
-        let inner_rows = Layout::default()
+        if inner.height < 4 {
+            continue;
+        }
+
+        let scene_height = inner.height.saturating_sub(4).max(6).min(inner.height);
+        let scene = Rect {
+            x: inner.x,
+            y: inner.y,
+            width: inner.width,
+            height: scene_height,
+        };
+        let info = Rect {
+            x: inner.x,
+            y: inner.y + scene_height,
+            width: inner.width,
+            height: inner.height - scene_height,
+        };
+
+        if selected {
+            render_element_background(f, scene, element, animation_tick);
+        } else {
+            // Subtle deep tint so unselected cards don't look totally flat.
+            let buf = f.buffer_mut();
+            for dy in 0..scene.height {
+                for dx in 0..scene.width {
+                    let cell = &mut buf[(scene.x + dx, scene.y + dy)];
+                    cell.set_char(' ');
+                    cell.set_bg(element_deep(element));
+                }
+            }
+        }
+
+        render_egg_overlay(f, scene, species, selected, animation_tick);
+
+        let info_rows = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(6),
                 Constraint::Length(1),
-                Constraint::Length(2),
+                Constraint::Length(1),
                 Constraint::Min(0),
             ])
-            .split(inner);
-
-        let egg_lines: Vec<Line> = starter_egg_art(species, selected, animation_tick)
-            .into_iter()
-            .map(|line| {
-                Line::from(Span::styled(
-                    line,
-                    Style::default()
-                        .fg(if selected { Color::Cyan } else { Color::Gray })
-                        .add_modifier(if selected {
-                            Modifier::BOLD
-                        } else {
-                            Modifier::empty()
-                        }),
-                ))
-            })
-            .collect();
-        f.render_widget(
-            Paragraph::new(egg_lines).alignment(Alignment::Center),
-            inner_rows[0],
-        );
+            .split(info);
 
         f.render_widget(
             Paragraph::new(Span::styled(
                 starter_species_name(species),
                 Style::default()
-                    .fg(Color::White)
+                    .fg(if selected { Color::White } else { Color::Gray })
                     .add_modifier(Modifier::BOLD),
             ))
             .alignment(Alignment::Center),
-            inner_rows[1],
+            info_rows[0],
         );
-
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                element_tagline(element),
+                Style::default().fg(if selected { accent } else { Color::DarkGray }),
+            ))
+            .alignment(Alignment::Center),
+            info_rows[1],
+        );
         f.render_widget(
             Paragraph::new(starter_species_description(species))
-                .style(Style::default().fg(Color::DarkGray))
+                .style(Style::default().fg(if selected {
+                    Color::Gray
+                } else {
+                    Color::DarkGray
+                }))
+                .wrap(Wrap { trim: true })
                 .alignment(Alignment::Center),
-            inner_rows[2],
+            info_rows[2],
         );
     }
 
     f.render_widget(
         Paragraph::new(Span::styled(
-            "←→ move  ·  Enter choose  ·  Esc back",
+            "← →  switch egg    Enter  hatch    Esc  back",
             Style::default().fg(Color::DarkGray),
         ))
         .alignment(Alignment::Center),
@@ -2631,26 +3292,8 @@ fn draw_onboarding_name(
     name_input: &str,
     animation_tick: u64,
 ) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(17),
-            Constraint::Min(0),
-        ])
-        .split(area);
-
-    let egg_lines: Vec<Line> = starter_egg_art(species, true, animation_tick)
-        .into_iter()
-        .map(|line| {
-            Line::from(Span::styled(
-                line,
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ))
-        })
-        .collect();
+    let element = starter_element(species);
+    let accent = element_accent(element);
 
     let display_name = if name_input.trim().is_empty() {
         starter_default_name(species)
@@ -2658,74 +3301,117 @@ fn draw_onboarding_name(
         name_input.trim()
     };
 
-    let rows = Layout::default()
+    let card = center_rect_with_size(area, 56.min(area.width), 20.min(area.height));
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(
+            Style::default()
+                .fg(accent)
+                .add_modifier(Modifier::BOLD),
+        )
+        .title(Span::styled(
+            format!(" ◆ {} EGG ◆ ", element_label(element)),
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+        ))
+        .title_alignment(Alignment::Center);
+    let inner = block.inner(card);
+    f.render_widget(block, card);
+
+    if inner.height < 6 {
+        return;
+    }
+
+    let scene_height = (inner.height / 2).max(6).min(inner.height - 4);
+    let scene = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: scene_height,
+    };
+    render_element_background(f, scene, element, animation_tick);
+    render_egg_overlay(f, scene, species, true, animation_tick);
+
+    let form = Rect {
+        x: inner.x,
+        y: inner.y + scene_height,
+        width: inner.width,
+        height: inner.height - scene_height,
+    };
+    let form_rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(6),
-            Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Min(0),
         ])
-        .split(chunks[1]);
+        .split(form);
 
     f.render_widget(
-        Paragraph::new(egg_lines).alignment(Alignment::Center),
-        rows[0],
-    );
-    f.render_widget(
         Paragraph::new(Span::styled(
-            format!("{} egg selected", starter_species_name(species)),
+            format!("{} chose you", starter_species_name(species)),
             Style::default()
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD),
         ))
         .alignment(Alignment::Center),
-        rows[1],
+        form_rows[0],
     );
     f.render_widget(
         Paragraph::new(Span::styled(
-            starter_species_description(species),
+            "Give your monster a name",
+            Style::default().fg(Color::Gray),
+        ))
+        .alignment(Alignment::Center),
+        form_rows[1],
+    );
+
+    let cursor = if (animation_tick / 6).is_multiple_of(2) {
+        "▏"
+    } else {
+        " "
+    };
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                "  ",
+                Style::default().bg(Color::Black),
+            ),
+            Span::styled(
+                format!(" {} ", if name_input.is_empty() { "" } else { name_input }),
+                Style::default()
+                    .fg(accent)
+                    .bg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                cursor,
+                Style::default().fg(accent).bg(Color::Black),
+            ),
+            Span::styled(
+                "  ",
+                Style::default().bg(Color::Black),
+            ),
+        ]))
+        .alignment(Alignment::Center),
+        form_rows[2],
+    );
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            format!("default · {}", display_name),
             Style::default().fg(Color::DarkGray),
         ))
         .alignment(Alignment::Center),
-        rows[2],
+        form_rows[3],
     );
     f.render_widget(
         Paragraph::new(Span::styled(
-            "Choose a name",
-            Style::default().fg(Color::White),
-        ))
-        .alignment(Alignment::Center),
-        rows[3],
-    );
-    f.render_widget(
-        Paragraph::new(Span::styled(
-            format!("> {}_", name_input),
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ))
-        .alignment(Alignment::Center),
-        rows[4],
-    );
-    f.render_widget(
-        Paragraph::new(Span::styled(
-            format!("Default: {}", display_name),
+            "Enter  review    Esc  back",
             Style::default().fg(Color::DarkGray),
         ))
         .alignment(Alignment::Center),
-        rows[5],
-    );
-    f.render_widget(
-        Paragraph::new(Span::styled(
-            "[Enter] review hatch    [Esc] back",
-            Style::default().fg(Color::DarkGray),
-        ))
-        .alignment(Alignment::Center),
-        rows[6],
+        form_rows[4],
     );
 }
 
@@ -2735,37 +3421,124 @@ fn draw_onboarding_confirm(
     species: Species,
     name_input: &str,
     confirm_choice: usize,
-    _animation_tick: u64,
+    animation_tick: u64,
 ) {
+    let element = starter_element(species);
+    let accent = element_accent(element);
     let preview = starter_preview_monster(species, name_input);
-    let preview_art: Vec<Line> = display::ascii_art(&preview)
-        .into_iter()
-        .map(|line| {
-            Line::from(Span::styled(
-                line,
-                Style::default()
-                    .fg(Color::Magenta)
-                    .add_modifier(Modifier::BOLD),
-            ))
-        })
-        .collect();
+    let preview_art = display::ascii_art(&preview);
 
-    let chunks = Layout::default()
+    let modal = center_rect_with_size(area, 56.min(area.width), 22.min(area.height));
+    f.render_widget(Clear, modal);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(
+            Style::default()
+                .fg(accent)
+                .add_modifier(Modifier::BOLD),
+        )
+        .title(Span::styled(
+            " ◆  READY TO HATCH?  ◆ ",
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+        ))
+        .title_alignment(Alignment::Center);
+    let inner = block.inner(modal);
+    f.render_widget(block, modal);
+
+    if inner.height < 8 {
+        return;
+    }
+
+    let scene_height = (inner.height / 2).max(6).min(inner.height - 5);
+    let scene = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: scene_height,
+    };
+    render_element_background(f, scene, element, animation_tick);
+
+    let art_h = preview_art.len() as u16;
+    let art_w = preview_art
+        .iter()
+        .map(|s| s.chars().count() as u16)
+        .max()
+        .unwrap_or(0);
+    let start_y = scene.y + scene.height.saturating_sub(art_h) / 2;
+    let start_x = scene.x + scene.width.saturating_sub(art_w) / 2;
+    let buf = f.buffer_mut();
+    for (dy, row) in preview_art.iter().enumerate() {
+        for (dx, ch) in row.chars().enumerate() {
+            if ch == ' ' {
+                continue;
+            }
+            let x = start_x + dx as u16;
+            let y = start_y + dy as u16;
+            if x >= scene.x + scene.width || y >= scene.y + scene.height {
+                continue;
+            }
+            let cell = &mut buf[(x, y)];
+            cell.set_char(ch);
+            cell.set_fg(Color::White);
+            let style = cell.style().add_modifier(Modifier::BOLD);
+            cell.set_style(style);
+        }
+    }
+
+    let info = Rect {
+        x: inner.x,
+        y: inner.y + scene_height,
+        width: inner.width,
+        height: inner.height - scene_height,
+    };
+    let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(0),
-            Constraint::Length(16),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
             Constraint::Min(0),
         ])
-        .split(area);
+        .split(info);
+
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            format!("{} the {}", preview.name, starter_species_name(species)),
+            Style::default()
+                .fg(accent)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .alignment(Alignment::Center),
+        rows[0],
+    );
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            element_tagline(element),
+            Style::default().fg(Color::Gray),
+        ))
+        .alignment(Alignment::Center),
+        rows[1],
+    );
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            "Starts at level 1. Grows as you code.",
+            Style::default().fg(Color::DarkGray),
+        ))
+        .alignment(Alignment::Center),
+        rows[2],
+    );
 
     let hatch_style = if confirm_choice == 0 {
         Style::default()
             .fg(Color::Black)
-            .bg(Color::Green)
+            .bg(accent)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(Color::White).bg(Color::DarkGray)
+        Style::default()
+            .fg(Color::Gray)
+            .add_modifier(Modifier::DIM)
     };
     let back_style = if confirm_choice == 1 {
         Style::default()
@@ -2773,80 +3546,27 @@ fn draw_onboarding_confirm(
             .bg(Color::Yellow)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(Color::White).bg(Color::DarkGray)
+        Style::default()
+            .fg(Color::Gray)
+            .add_modifier(Modifier::DIM)
     };
 
     f.render_widget(
-        Paragraph::new(vec![
-            Line::from(""),
-            Line::from(Span::styled(
-                "Confirm your starter",
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
-        ])
-        .alignment(Alignment::Center),
-        chunks[1],
-    );
-
-    let modal = center_rect_with_size(chunks[1], 48, 12);
-    f.render_widget(Clear, modal);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(" Hatch ");
-    let inner = block.inner(modal);
-    f.render_widget(block, modal);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(4),
-            Constraint::Length(2),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Min(0),
-        ])
-        .split(inner);
-
-    f.render_widget(
-        Paragraph::new(preview_art).alignment(Alignment::Center),
-        rows[0],
-    );
-    f.render_widget(
-        Paragraph::new(vec![
-            Line::from(Span::styled(
-                format!("{} the {}", preview.name, starter_species_name(species)),
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(Span::styled(
-                "Your monster will start at level 1 and grow as you code.",
-                Style::default().fg(Color::DarkGray),
-            )),
-        ])
-        .alignment(Alignment::Center),
-        rows[1],
-    );
-    f.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("   HATCH   ", hatch_style),
-            Span::raw("   "),
-            Span::styled("   BACK   ", back_style),
+            Span::styled("  ▶ HATCH ◀  ", hatch_style),
+            Span::raw("    "),
+            Span::styled("  BACK  ", back_style),
         ]))
         .alignment(Alignment::Center),
-        rows[2],
+        rows[3],
     );
     f.render_widget(
         Paragraph::new(Span::styled(
-            "←→ choose  ·  Enter confirm  ·  Esc back",
+            "← →  choose    Enter  confirm    Esc  back",
             Style::default().fg(Color::DarkGray),
         ))
         .alignment(Alignment::Center),
-        rows[3],
+        rows[4],
     );
 }
 
