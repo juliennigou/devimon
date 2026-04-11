@@ -125,19 +125,25 @@ async function copyInstallCommand() {
 }
 
 renderInstallPanel();
-// Position slider once layout is fully painted, then reveal it
-window.addEventListener("load", () => {
+
+function initToggleSlider() {
   const slider = document.querySelector(".toggle-slider");
-  if (slider) slider.classList.add("toggle-slider--no-transition");
+  if (!slider) return;
+  // Snap into position without transition, then reveal
+  slider.classList.add("toggle-slider--no-transition");
   updateToggleSlider();
+  slider.classList.add("toggle-slider--visible");
   // Re-enable transition on next frame so subsequent clicks animate
-  requestAnimationFrame(() => {
-    if (slider) {
-      slider.classList.remove("toggle-slider--no-transition");
-      slider.classList.add("toggle-slider--visible");
-    }
-  });
-});
+  requestAnimationFrame(() => slider.classList.remove("toggle-slider--no-transition"));
+}
+
+// Module scripts are deferred — on fast/cached loads the 'load' event may have
+// already fired before this listener is registered. Guard against that.
+if (document.readyState === "complete") {
+  initToggleSlider();
+} else {
+  window.addEventListener("load", initToggleSlider);
+}
 
 if (installCopyButton) {
   installCopyButton.addEventListener("click", () => {
