@@ -91,16 +91,16 @@ fn load_state_or_err() -> Result<SaveFile, String> {
     }
 }
 
-/// Load the monster, then drain events + apply decay + check evolution.
+/// Load the monster, then apply decay before draining events + checking evolution.
 /// Returns the full local state and the XP that was applied from the event queue.
 fn load_and_tick() -> Result<(SaveFile, u32), String> {
     let mut state = load_state_or_err()?;
     let idx = state.active_monster_idx();
-    let xp_gained = xp::drain_and_apply(&mut state.monsters[idx]).map_err(|e| e.to_string())?;
-    if xp_gained > 0 {
+    let (decayed, xp_gained) =
+        xp::tick_monster_progress(&mut state.monsters[idx]).map_err(|e| e.to_string())?;
+    if decayed || xp_gained > 0 {
         save::mark_dirty(&mut state);
     }
-    state.monsters[idx].apply_decay();
     if let Some(new_stage) = state.monsters[idx].check_evolution() {
         let name = state.monsters[idx].name.clone();
         println!(

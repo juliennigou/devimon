@@ -100,3 +100,10 @@ pub fn drain_and_apply(monster: &mut Monster) -> io::Result<u32> {
 
     Ok(total_xp)
 }
+
+/// Apply passive decay first, then drain the queued file events into XP.
+pub fn tick_monster_progress(monster: &mut Monster) -> io::Result<(bool, u32)> {
+    let decayed = monster.apply_decay();
+    let xp_gained = drain_and_apply(monster)?;
+    Ok((decayed, xp_gained))
+}

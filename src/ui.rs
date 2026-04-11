@@ -6,7 +6,6 @@ use crate::monster::{Monster, Species};
 use crate::save::{self, SaveFile};
 use crate::watcher;
 use crate::xp;
-use chrono::Utc;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
@@ -506,12 +505,11 @@ fn tick(app: &mut AppState) -> io::Result<()> {
         }
 
         let idx = state.active_monster_idx();
-        let xp_gained = xp::drain_and_apply(&mut state.monsters[idx]).unwrap_or(0);
-        if xp_gained > 0 {
+        let (decayed, xp_gained) =
+            xp::tick_monster_progress(&mut state.monsters[idx]).unwrap_or((false, 0));
+        if decayed || xp_gained > 0 {
             save::mark_dirty(state);
         }
-
-        state.monsters[idx].apply_decay();
         if let Some(new_stage) = state.monsters[idx].check_evolution() {
             let name = state.monsters[idx].name.clone();
             save::mark_dirty(state);
@@ -570,27 +568,6 @@ fn step_dino(app: &mut AppState) {
         if let Some(ActiveMiniGame::Dino(session)) = active_game {
             session.update();
             if session.phase == DinoGamePhase::Running {
-                let total_xp = (session.elapsed_ms / dino::XP_INTERVAL_MS) as u32;
-                if total_xp > session.xp_awarded {
-                    let gained = total_xp - session.xp_awarded;
-                    session.xp_awarded = total_xp;
-                    let (monster_name, evolved) = award_dino_xp_to_runner(state, gained);
-                    save::mark_dirty(state);
-                    *flash = Some(Flash {
-                        message: match evolved {
-                            Some(stage) => format!(
-                                "+{} XP in Dino Run — {} evolved to {}!",
-                                gained,
-                                monster_name,
-                                stage.label()
-                            ),
-                            None => format!("+{} XP in Dino Run", gained),
-                        },
-                        kind: FlashKind::Success,
-                        created_at: Instant::now(),
-                    });
-                }
-
                 let monster = state.active_monster();
                 if dino::has_collision(monster, session) {
                     finish_dino_run(state, flash, session);
@@ -1998,8 +1975,9 @@ fn draw_games_menu(
         if matches!(game, MiniGame::DinoRun) {
             lines.push(Line::from(Span::styled(
                 format!(
-                    "    Record: {}  ·  Reward: 1 XP / 10s",
-                    dino::format_duration_ms(state.games.dino.best_time_ms)
+                    "    Record: {}  ·  Unlocks queued: {}",
+                    dino::format_duration_ms(state.games.dino.best_time_ms),
+                    state.games.dino.pending_unlock_triggers
                 ),
                 Style::default().fg(Color::Yellow),
             )));
@@ -2056,13 +2034,13 @@ fn draw_dino_game(f: &mut ratatui::Frame, area: Rect, state: &SaveFile, session:
         ),
         Span::styled("  ·  ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            format!("Speed {:.1}", session.current_speed),
-            Style::default().fg(Color::Magenta),
+            format!("Unlocks {}", state.games.dino.pending_unlock_triggers),
+            Style::default().fg(Color::Green),
         ),
         Span::styled("  ·  ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            format!("XP {}", session.xp_awarded),
-            Style::default().fg(Color::Green),
+            format!("Speed {:.1}", session.current_speed),
+            Style::default().fg(Color::Magenta),
         ),
     ]);
     let status = dino::status_text(state.games.dino.best_time_ms, session);
@@ -2340,24 +2318,13 @@ fn draw_logout_confirm_modal(
     );
 }
 
-fn award_dino_xp_to_runner(
-    state: &mut SaveFile,
-    gained: u32,
-) -> (String, Option<crate::monster::Stage>) {
-    let monster = state.active_monster_mut();
-    monster.gain_xp(gained);
-    monster.last_active = Utc::now();
-    let evolved = monster.check_evolution();
-    (monster.name.clone(), evolved)
-}
-
 fn finish_dino_run(state: &mut SaveFile, flash: &mut Option<Flash>, session: &mut DinoGameSession) {
-    let Some(result) = dino::crash(session, state.games.dino.best_time_ms) else {
+    let Some(result) = dino::crash(session, &mut state.games.dino) else {
         return;
     };
 
-    if result.is_record {
-        state.games.dino.best_time_ms = result.duration_ms;
+    if result.is_record || result.unlock_reason.is_some() {
+        save::mark_dirty(state);
     }
     save::save_state(state).ok();
 
@@ -2366,18 +2333,25 @@ fn finish_dino_run(state: &mut SaveFile, flash: &mut Option<Flash>, session: &mu
     } else {
         ""
     };
+    let unlock_text = match result.unlock_reason {
+        Some(save::DinoUnlockReason::FirstRecord) => {
+            " · unlock trigger queued from the first record"
+        }
+        Some(save::DinoUnlockReason::Endurance) => " · unlock trigger queued from a 120s+ run",
+        None => "",
+    };
     let outcome_text = match result.exit_reason {
         crate::dino::integration::DinoExitReason::GameOver => "survived",
     };
     *flash = Some(Flash {
         message: format!(
-            "Dino Run: {} {} {} · score {} · earned {} XP{}",
+            "Dino Run: {} {} {} · score {}{}{}",
             state.active_monster().name,
             outcome_text,
             dino::format_duration_ms(result.duration_ms),
             result.score,
-            result.xp_awarded,
-            record_text
+            record_text,
+            unlock_text
         ),
         kind: FlashKind::Info,
         created_at: Instant::now(),

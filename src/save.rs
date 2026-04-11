@@ -43,6 +43,43 @@ impl Default for CloudState {
 pub struct DinoGameProgress {
     #[serde(default)]
     pub best_time_ms: u64,
+    #[serde(default)]
+    pub pending_unlock_triggers: u32,
+    #[serde(default)]
+    pub record_unlock_claimed: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DinoUnlockReason {
+    FirstRecord,
+    Endurance,
+}
+
+pub const DINO_UNLOCK_TRIGGER_THRESHOLD_MS: u64 = 120_000;
+
+impl DinoGameProgress {
+    pub fn register_run_completion(&mut self, duration_ms: u64) -> Option<DinoUnlockReason> {
+        let is_record = duration_ms > self.best_time_ms;
+        let qualifies_for_endurance = duration_ms > DINO_UNLOCK_TRIGGER_THRESHOLD_MS;
+
+        if is_record {
+            if !self.record_unlock_claimed {
+                self.pending_unlock_triggers = self.pending_unlock_triggers.saturating_add(1);
+                self.record_unlock_claimed = true;
+                self.best_time_ms = duration_ms;
+                return Some(DinoUnlockReason::FirstRecord);
+            }
+
+            self.best_time_ms = duration_ms;
+        }
+
+        if qualifies_for_endurance {
+            self.pending_unlock_triggers = self.pending_unlock_triggers.saturating_add(1);
+            return Some(DinoUnlockReason::Endurance);
+        }
+
+        None
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -74,7 +111,7 @@ pub struct SaveFile {
     pub games: GameProgress,
 }
 
-const SAVE_VERSION: u32 = 4;
+const SAVE_VERSION: u32 = 5;
 
 fn new_device_id() -> String {
     Uuid::new_v4().to_string()
@@ -204,6 +241,10 @@ fn normalize(mut state: SaveFile) -> SaveFile {
         state.cloud.device_id = new_device_id();
     }
 
+    if state.games.dino.best_time_ms > 0 {
+        state.games.dino.record_unlock_claimed = true;
+    }
+
     state
 }
 
@@ -235,4 +276,60 @@ pub fn clear_session(state: &mut SaveFile) {
     state.cloud.monster_id = None;
     state.cloud.last_synced_at = None;
     state.cloud.sync_dirty = false;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn first_record_claims_one_pending_unlock() {
+        let mut progress = DinoGameProgress::default();
+
+        let reason = progress.register_run_completion(95_000);
+
+        assert_eq!(reason, Some(DinoUnlockReason::FirstRecord));
+        assert_eq!(progress.best_time_ms, 95_000);
+        assert_eq!(progress.pending_unlock_triggers, 1);
+        assert!(progress.record_unlock_claimed);
+    }
+
+    #[test]
+    fn later_long_runs_queue_endurance_unlocks() {
+        let mut progress = DinoGameProgress::default();
+
+        assert_eq!(
+            progress.register_run_completion(95_000),
+            Some(DinoUnlockReason::FirstRecord)
+        );
+        assert_eq!(progress.register_run_completion(100_000), None);
+        assert_eq!(
+            progress.register_run_completion(130_000),
+            Some(DinoUnlockReason::Endurance)
+        );
+        assert_eq!(progress.best_time_ms, 130_000);
+        assert_eq!(progress.pending_unlock_triggers, 2);
+    }
+
+    #[test]
+    fn normalize_claims_existing_records() {
+        let monster = Monster::spawn("Embit".to_string());
+        let state = SaveFile {
+            version: 0,
+            monsters: vec![monster.clone()],
+            active_monster_id: monster.id.clone(),
+            monster: None,
+            cloud: CloudState::default(),
+            games: GameProgress {
+                dino: DinoGameProgress {
+                    best_time_ms: 42_000,
+                    pending_unlock_triggers: 0,
+                    record_unlock_claimed: false,
+                },
+            },
+        };
+
+        let normalized = normalize(state);
+        assert!(normalized.games.dino.record_unlock_claimed);
+    }
 }

@@ -13,7 +13,7 @@ pub enum DinoObstacleKind {
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DinoGamePhase {
     Ready,
     Starting,
@@ -25,7 +25,6 @@ pub enum DinoGamePhase {
 
 pub struct DinoGameSession {
     pub elapsed_ms: u64,
-    pub xp_awarded: u32,
     pub frame: u64,
     pub runner_altitude: f32,
     pub runner_velocity: f32,

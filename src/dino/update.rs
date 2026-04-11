@@ -27,7 +27,6 @@ impl DinoGameSession {
     pub fn new(seed: u64) -> Self {
         Self {
             elapsed_ms: 0,
-            xp_awarded: 0,
             frame: 0,
             runner_altitude: 0.0,
             runner_velocity: 0.0,
@@ -185,7 +184,6 @@ impl DinoGameSession {
 
     fn begin_run(&mut self, jump_on_start: bool) {
         self.elapsed_ms = 0;
-        self.xp_awarded = 0;
         self.frame = 0;
         self.runner_altitude = 0.0;
         self.runner_velocity = 0.0;

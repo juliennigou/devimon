@@ -179,11 +179,11 @@ impl Monster {
     }
 
     /// Apply passive time-based decay based on elapsed hours since last update.
-    pub fn apply_decay(&mut self) {
+    pub fn apply_decay(&mut self) -> bool {
         let now = Utc::now();
         let elapsed_hours = (now - self.last_decay).num_seconds() as f32 / 3600.0;
         if elapsed_hours <= 0.0 {
-            return;
+            return false;
         }
 
         self.set_hunger(self.hunger - 5.0 * elapsed_hours);
@@ -199,6 +199,7 @@ impl Monster {
         }
 
         self.last_decay = now;
+        true
     }
 
     pub fn avg_mood(&self) -> f32 {
@@ -212,7 +213,14 @@ impl Monster {
     /// Check if the monster should evolve and update its stage.
     pub fn check_evolution(&mut self) -> Option<Stage> {
         let new_stage = match self.stage {
-            Stage::Baby if self.level >= 5 && self.peak_mood > 50.0 => Some(Stage::Young),
+            Stage::Baby
+                if self.level >= 5
+                    && self.peak_hunger >= 90.0
+                    && self.peak_energy >= 90.0
+                    && self.peak_mood >= 90.0 =>
+            {
+                Some(Stage::Young)
+            }
             Stage::Young if self.level >= 15 && self.avg_mood() > 60.0 => Some(Stage::Evolved),
             _ => None,
         };
@@ -222,5 +230,39 @@ impl Monster {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn baby_does_not_evolve_from_spawn_state() {
+        let mut monster = Monster::spawn("Embit".to_string());
+        monster.level = 5;
+
+        assert_eq!(monster.check_evolution(), None);
+        assert_eq!(monster.stage, Stage::Baby);
+    }
+
+    #[test]
+    fn baby_evolves_after_reaching_all_stat_milestones() {
+        let mut monster = Monster::spawn("Embit".to_string());
+        monster.level = 5;
+        monster.set_hunger(90.0);
+        monster.set_energy(95.0);
+        monster.set_mood(100.0);
+
+        assert_eq!(monster.check_evolution(), Some(Stage::Young));
+        assert_eq!(monster.stage, Stage::Young);
+    }
+
+    #[test]
+    fn decay_reports_when_progress_was_applied() {
+        let mut monster = Monster::spawn("Embit".to_string());
+        monster.last_decay = Utc::now() - chrono::Duration::hours(1);
+
+        assert!(monster.apply_decay());
     }
 }

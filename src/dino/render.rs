@@ -1,4 +1,4 @@
-use crate::{display, monster::Monster};
+use crate::{display, monster::Monster, save::DINO_UNLOCK_TRIGGER_THRESHOLD_MS};
 
 use super::{
     GROUND_HEIGHT_ROWS, LOGICAL_HEIGHT, LOGICAL_WIDTH, RUNNER_X,
@@ -61,8 +61,9 @@ pub fn status_text(best_time_ms: u64, session: &DinoGameSession) -> String {
         DinoGamePhase::Starting => "Get ready...".to_string(),
         DinoGamePhase::Running => {
             format!(
-                "Score {}  ·  Survive 10 seconds to earn 1 XP.",
-                session.score
+                "Score {}  ·  First record or {}s+ run queues an unlock trigger.",
+                session.score,
+                DINO_UNLOCK_TRIGGER_THRESHOLD_MS / 1000
             )
         }
         DinoGamePhase::Crashed if best_time_ms == session.elapsed_ms => {
