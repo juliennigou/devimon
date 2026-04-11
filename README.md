@@ -75,7 +75,7 @@ devimon --help
 
 ```bash
 # 1. Spawn your monster
-devimon spawn Devi
+devimon spawn Embit --species ember   # or: --species tide / bloom
 
 # 2. Open the interactive TUI
 devimon
@@ -117,9 +117,9 @@ Baby  ──►  Young  ──►  Evolved
 
 Each stage unlocks new ASCII art and animations in the TUI. There are three species:
 
-- **Devimon** (default) — the classic terminal demon
-- **Dragon** — high-energy starter with aerial animations
-- **Slime** — calm blob starter with a steady growth vibe
+- **Ember** 🔥 — fire line: Embit → Pyrofang → Infernox
+- **Tide** 🌊 — water line: Driplet → Wavekin → Maelstryx
+- **Bloom** 🌱 — grass line: Sprout → Vinekith → Eldroak
 
 ---
 

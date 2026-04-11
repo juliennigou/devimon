@@ -8,28 +8,47 @@ fn new_monster_id() -> String {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum Species {
+    /// Fire line: Embit → Pyrofang → Infernox
     #[default]
-    Devimon,
-    Dragon,
-    Slime,
+    Ember,
+    /// Water line: Driplet → Wavekin → Maelstryx
+    Tide,
+    /// Grass line: Sprout → Vinekith → Eldroak
+    Bloom,
 }
 
 impl Species {
+    /// Display label for the species line itself.
     pub fn label(self) -> &'static str {
         match self {
-            Species::Devimon => "Devimon",
-            Species::Dragon => "Dragon",
-            Species::Slime => "Slime",
+            Species::Ember => "Ember",
+            Species::Tide => "Tide",
+            Species::Bloom => "Bloom",
+        }
+    }
+
+    /// Display name of the specific evolution form (species + stage).
+    pub fn form_name(self, stage: Stage) -> &'static str {
+        match (self, stage) {
+            (Species::Ember, Stage::Baby) => "Embit",
+            (Species::Ember, Stage::Young) => "Pyrofang",
+            (Species::Ember, Stage::Evolved) => "Infernox",
+            (Species::Tide, Stage::Baby) => "Driplet",
+            (Species::Tide, Stage::Young) => "Wavekin",
+            (Species::Tide, Stage::Evolved) => "Maelstryx",
+            (Species::Bloom, Stage::Baby) => "Sprout",
+            (Species::Bloom, Stage::Young) => "Vinekith",
+            (Species::Bloom, Stage::Evolved) => "Eldroak",
         }
     }
 
     pub fn parse(input: &str) -> Result<Self, String> {
         match input.to_lowercase().as_str() {
-            "devimon" => Ok(Species::Devimon),
-            "dragon" => Ok(Species::Dragon),
-            "slime" => Ok(Species::Slime),
+            "ember" | "fire" => Ok(Species::Ember),
+            "tide" | "water" => Ok(Species::Tide),
+            "bloom" | "grass" => Ok(Species::Bloom),
             other => Err(format!(
-                "unknown species '{}' — try: devimon, dragon, slime",
+                "unknown species '{}' — try: ember, tide, bloom",
                 other
             )),
         }
@@ -95,7 +114,7 @@ impl Monster {
         Self {
             id: new_monster_id(),
             name,
-            species: Species::Devimon,
+            species: Species::Ember,
             level: 1,
             xp: 0,
             total_xp: 0,

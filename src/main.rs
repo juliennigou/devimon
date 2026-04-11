@@ -33,8 +33,8 @@ enum Commands {
     Spawn {
         /// Name of the monster
         name: Option<String>,
-        /// Species: devimon (default), dragon, or slime
-        #[arg(long, default_value = "devimon")]
+        /// Species: ember (fire, default), tide (water), or bloom (grass)
+        #[arg(long, default_value = "ember")]
         species: String,
     },
     /// Show the monster's current state
@@ -150,8 +150,12 @@ fn maybe_sync_after_local_change(state: &mut SaveFile) {
 }
 
 fn cmd_spawn(name: Option<String>, species_str: String) -> Result<(), String> {
-    let name = name.unwrap_or_else(|| "Devi".to_string());
     let species = monster::Species::parse(&species_str)?;
+    let name = name.unwrap_or_else(|| match species {
+        monster::Species::Ember => "Embit".to_string(),
+        monster::Species::Tide => "Driplet".to_string(),
+        monster::Species::Bloom => "Sprout".to_string(),
+    });
     match save::load_state().map_err(|e| e.to_string())? {
         None => {
             let m = monster::Monster::spawn_with_species(name.clone(), species);

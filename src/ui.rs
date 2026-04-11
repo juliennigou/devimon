@@ -30,7 +30,7 @@ const ANIMATION_FRAME_RATE: Duration = Duration::from_millis(60);
 const FLASH_DURATION: Duration = Duration::from_secs(3);
 const SYNC_RATE: Duration = Duration::from_secs(20);
 const DINO_MAX_STEPS_PER_LOOP: u8 = 5;
-const STARTER_SPECIES: [Species; 3] = [Species::Devimon, Species::Dragon, Species::Slime];
+const STARTER_SPECIES: [Species; 3] = [Species::Ember, Species::Tide, Species::Bloom];
 
 // ── Menu ─────────────────────────────────────────────────────────────────────
 
@@ -312,7 +312,7 @@ fn starter_species(cursor: usize) -> Species {
     STARTER_SPECIES
         .get(cursor)
         .copied()
-        .unwrap_or(Species::Devimon)
+        .unwrap_or(Species::Ember)
 }
 
 fn starter_species_name(species: Species) -> &'static str {
@@ -321,17 +321,17 @@ fn starter_species_name(species: Species) -> &'static str {
 
 fn starter_species_description(species: Species) -> &'static str {
     match species {
-        Species::Devimon => "Balanced starter. Loyal, scrappy, and built for long coding sessions.",
-        Species::Dragon => "High-energy flyer. Fierce ladder climber with a proud streak.",
-        Species::Slime => "Calm code blob. Stable, curious, and quietly relentless.",
+        Species::Ember => "Fierce flame cub. Burns bright through long debugging marathons.",
+        Species::Tide => "Tidepool drifter. Calm, focused, and relentless under pressure.",
+        Species::Bloom => "Rooted sapling. Patient grower with deep, steady resolve.",
     }
 }
 
 fn starter_default_name(species: Species) -> &'static str {
     match species {
-        Species::Devimon => "Devi",
-        Species::Dragon => "Drako",
-        Species::Slime => "Gloop",
+        Species::Ember => "Embit",
+        Species::Tide => "Driplet",
+        Species::Bloom => "Sprout",
     }
 }
 
@@ -344,9 +344,9 @@ enum Element {
 
 fn starter_element(species: Species) -> Element {
     match species {
-        Species::Devimon => Element::Fire,
-        Species::Dragon => Element::Water,
-        Species::Slime => Element::Grass,
+        Species::Ember => Element::Fire,
+        Species::Tide => Element::Water,
+        Species::Bloom => Element::Grass,
     }
 }
 
@@ -404,25 +404,25 @@ fn starter_egg_art(species: Species, selected: bool, tick: u64) -> Vec<String> {
     let wobble_left = selected && (tick / 6).is_multiple_of(2);
     let wobble_pad = if wobble_left { " " } else { "" };
     let motif = match species {
-        Species::Devimon => {
+        Species::Ember => {
             if selected && (tick / 4).is_multiple_of(2) {
-                "><"
+                "**"
             } else {
-                "oo"
-            }
-        }
-        Species::Dragon => {
-            if selected && (tick / 4).is_multiple_of(2) {
                 "^^"
-            } else {
-                "/\\"
             }
         }
-        Species::Slime => {
+        Species::Tide => {
             if selected && (tick / 4).is_multiple_of(2) {
                 "~~"
             } else {
-                ".."
+                "≈≈"
+            }
+        }
+        Species::Bloom => {
+            if selected && (tick / 4).is_multiple_of(2) {
+                "\\/"
+            } else {
+                "//"
             }
         }
     };
