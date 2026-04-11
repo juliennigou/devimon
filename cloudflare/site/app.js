@@ -16,8 +16,131 @@ const ghStarsEl = document.querySelector("#gh-stars");
 const playerCountEl = document.querySelector("#player-count");
 const monsterCountEl = document.querySelector("#monster-count");
 const terminalBody = document.querySelector("#onboarding-terminal");
+const installCommandEl = document.querySelector("#install-command");
+const installHintEl = document.querySelector("#install-hint");
+const installOsLabelEl = document.querySelector("#install-os-label");
+const installCopyButton = document.querySelector("#install-copy-button");
+const installModeButtons = document.querySelectorAll("[data-install-mode]");
 
 if (apiBaseDisplay) apiBaseDisplay.textContent = `${API_BASE}/api`;
+
+const INSTALL_VARIANTS = {
+  unix: {
+    osLabel: "macOS / Linux",
+    prompt: "$",
+    command:
+      "curl -fsSL https://raw.githubusercontent.com/juliennigou/devimon/main/install.sh | bash",
+    hintKey: "install.hint.unix",
+    logs: [
+      "  Detecting platform... macOS / Linux",
+      "  Fetching latest release... v0.1.6",
+      "  Downloading devimon for your platform...",
+      "  Installing to /usr/local/bin/devimon",
+      "  Devimon v0.1.6 installed.",
+    ],
+  },
+  windows: {
+    osLabel: "Windows PowerShell",
+    prompt: "PS>",
+    command:
+      "irm https://raw.githubusercontent.com/juliennigou/devimon/main/install.ps1 | iex",
+    hintKey: "install.hint.windows",
+    logs: [
+      "  Detecting platform... Windows",
+      "  Fetching latest release... v0.1.6",
+      "  Downloading devimon-windows-x86_64.exe...",
+      "  Installing to %USERPROFILE%\\.devimon\\bin\\devimon.exe",
+      "  Devimon v0.1.6 installed.",
+    ],
+  },
+};
+
+function detectInstallVariant() {
+  const platform =
+    navigator.userAgentData?.platform || navigator.platform || navigator.userAgent || "";
+  const normalized = platform.toLowerCase();
+  if (normalized.includes("win")) {
+    return "windows";
+  }
+  return "unix";
+}
+
+let currentInstallMode = "auto";
+
+function getInstallVariantConfig() {
+  const variant =
+    currentInstallMode === "auto" ? detectInstallVariant() : currentInstallMode;
+  return INSTALL_VARIANTS[variant] || INSTALL_VARIANTS.unix;
+}
+
+function renderInstallPanel() {
+  const config = getInstallVariantConfig();
+  if (installCommandEl) installCommandEl.textContent = config.command;
+  if (installOsLabelEl) installOsLabelEl.textContent = config.osLabel;
+  if (installHintEl) {
+    installHintEl.setAttribute("data-i18n", config.hintKey);
+    installHintEl.textContent = t(config.hintKey);
+  }
+  installModeButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.installMode === currentInstallMode);
+  });
+}
+
+function fallbackCopyText(text) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "absolute";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const ok = document.execCommand("copy");
+  document.body.removeChild(textarea);
+  if (!ok) throw new Error("copy failed");
+}
+
+async function copyInstallCommand() {
+  const { command } = getInstallVariantConfig();
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(command);
+  } else {
+    fallbackCopyText(command);
+  }
+  const original = t("install.copy");
+  installCopyButton.textContent = t("install.copy.done");
+  window.setTimeout(() => {
+    installCopyButton.textContent = original;
+  }, 1200);
+}
+
+renderInstallPanel();
+
+if (installCopyButton) {
+  installCopyButton.addEventListener("click", () => {
+    copyInstallCommand().catch(() => {});
+  });
+}
+
+let onboardingRunId = 0;
+
+function resetOnboardingSurface() {
+  terminalBody.replaceChildren();
+  document.querySelectorAll(".wandering-monster").forEach((el) => el.remove());
+}
+
+function restartOnboarding() {
+  onboardingRunId += 1;
+  resetOnboardingSurface();
+  runOnboarding(onboardingRunId);
+}
+
+installModeButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    currentInstallMode = button.dataset.installMode || "auto";
+    renderInstallPanel();
+    restartOnboarding();
+  });
+});
 
 // ── Refresh ─────────────────────────────────────────────────────────────
 refreshButton.addEventListener("click", () => loadLeaderboard());
@@ -143,58 +266,53 @@ document.querySelectorAll('.nav-link[href^="#"]').forEach((link) => {
 
 // ── Onboarding terminal animation ──────────────────────────────────────
 // Runs once: install → spawn → launch TUI → monster escapes into the page
-const ONBOARD_SCRIPT = [
-  {
-    type: "cmd",
-    text: "curl -fsSL https://raw.githubusercontent.com/juliennigou/devimon/main/install.sh | bash",
-  },
-  { type: "log", text: "  Detecting platform... macOS ARM64", cls: "log-line" },
-  { type: "log", text: "  Fetching latest release... v0.1.4", cls: "log-line" },
-  {
-    type: "log",
-    text: "  Downloading devimon-macos-arm64...",
-    cls: "log-line",
-  },
-  {
-    type: "log",
-    text: "  Installing to /usr/local/bin/devimon",
-    cls: "log-line log-ok",
-  },
-  { type: "log", text: "  Devimon v0.1.4 installed.", cls: "log-line log-ok" },
-  { type: "pause", ms: 500 },
-  { type: "cmd", text: "devimon spawn Kiara" },
-  { type: "log", text: "  Spawning new monster: Kiara", cls: "log-line" },
-  {
-    type: "log",
-    text: "  Species: Devimon  |  Stage: Baby  |  Level: 1",
-    cls: "log-line log-ok",
-  },
-  { type: "pause", ms: 400 },
-  { type: "cmd", text: "devimon" },
-  { type: "log", text: "  Starting TUI...", cls: "log-line" },
-  { type: "pause", ms: 300 },
-  {
-    type: "ascii",
-    lines: [
-      "  ┌──────────────────────────────────────┐",
-      "  │         Kiara  ♥  Lv.1  Baby         │",
-      "  │                                      │",
-      "  │           .-^-.                     │",
-      "  │        .-( ^o^ )-.                  │",
-      "  │          /|___|\\                     │",
-      "  │          d_/ \\_b                     │",
-      "  │                                      │",
-      "  │  Hunger ████████░░  80%              │",
-      "  │  Energy ██████████  100%             │",
-      "  │  Mood   ████████░░  80%              │",
-      "  │                                      │",
-      "  │  [F]eed  [P]lay  [R]est  [S]ync     │",
-      "  └──────────────────────────────────────┘",
-    ],
-  },
-  { type: "pause", ms: 2000 },
-  { type: "escape" }, // monster breaks free
-];
+function buildOnboardScript() {
+  const config = getInstallVariantConfig();
+  return [
+    {
+      type: "cmd",
+      text: config.command,
+    },
+    ...config.logs.map((text, index) => ({
+      type: "log",
+      text,
+      cls: index >= 3 ? "log-line log-ok" : "log-line",
+    })),
+    { type: "pause", ms: 500 },
+    { type: "cmd", text: "devimon spawn Kiara" },
+    { type: "log", text: "  Spawning new monster: Kiara", cls: "log-line" },
+    {
+      type: "log",
+      text: "  Species: Devimon  |  Stage: Baby  |  Level: 1",
+      cls: "log-line log-ok",
+    },
+    { type: "pause", ms: 400 },
+    { type: "cmd", text: "devimon" },
+    { type: "log", text: "  Starting TUI...", cls: "log-line" },
+    { type: "pause", ms: 300 },
+    {
+      type: "ascii",
+      lines: [
+        "  ┌──────────────────────────────────────┐",
+        "  │         Kiara  ♥  Lv.1  Baby         │",
+        "  │                                      │",
+        "  │           .-^-.                     │",
+        "  │        .-( ^o^ )-.                  │",
+        "  │          /|___|\\                     │",
+        "  │          d_/ \\_b                     │",
+        "  │                                      │",
+        "  │  Hunger ████████░░  80%              │",
+        "  │  Energy ██████████  100%             │",
+        "  │  Mood   ████████░░  80%              │",
+        "  │                                      │",
+        "  │  [F]eed  [P]lay  [R]est  [S]ync     │",
+        "  └──────────────────────────────────────┘",
+      ],
+    },
+    { type: "pause", ms: 2000 },
+    { type: "escape" },
+  ];
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -216,12 +334,16 @@ async function typeText(el, text, speed) {
   }
 }
 
-async function runOnboarding() {
-  for (const step of ONBOARD_SCRIPT) {
+async function runOnboarding(runId = onboardingRunId) {
+  for (const step of buildOnboardScript()) {
+    if (runId !== onboardingRunId) {
+      return;
+    }
     switch (step.type) {
       case "cmd": {
+        const { prompt } = getInstallVariantConfig();
         const line = addLine(
-          '<span class="prompt">$</span> <span class="cmd"></span><span class="cursor-blink">█</span>',
+          `<span class="prompt">${escapeHtml(prompt)}</span> <span class="cmd"></span><span class="cursor-blink">█</span>`,
         );
         const cmdSpan = line.querySelector(".cmd");
         const cursor = line.querySelector(".cursor-blink");
@@ -341,4 +463,4 @@ function launchWanderingMonster() {
 // ── Boot ─────────────────────────────────────────────────────────────────
 loadLeaderboard();
 loadGitHubStars();
-runOnboarding();
+restartOnboarding();

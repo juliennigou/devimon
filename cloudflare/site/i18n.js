@@ -18,6 +18,17 @@ const translations = {
     "table.level": "LVL",
     "table.xp": "XP",
     "table.active": "Last Active",
+    "install.label": "Install",
+    "install.copy": "[Copy]",
+    "install.copy.done": "[Copied]",
+    "install.mode.auto": "Auto",
+    "install.mode.unix": "Unix",
+    "install.mode.windows": "Windows",
+    "install.hint.unix": "Uses the shell installer for Unix environments.",
+    "install.hint.windows":
+      "Use this in PowerShell for a native Windows install.",
+    "install.hint.unknown":
+      "Defaulting to the Unix installer. Switch to the PowerShell command on Windows.",
     "about.title": "┌── ABOUT ─────────────────────────────────────────────┐",
     "about.cmd": "cat README.md",
     "about.terminal.title": "Terminal Native",
@@ -52,6 +63,18 @@ const translations = {
     "table.level": "NIV",
     "table.xp": "XP",
     "table.active": "Dernière activité",
+    "install.label": "Installation",
+    "install.copy": "[Copier]",
+    "install.copy.done": "[Copié]",
+    "install.mode.auto": "Auto",
+    "install.mode.unix": "Unix",
+    "install.mode.windows": "Windows",
+    "install.hint.unix":
+      "Utilise l'installateur shell pour les environnements Unix.",
+    "install.hint.windows":
+      "À lancer dans PowerShell pour une installation Windows native.",
+    "install.hint.unknown":
+      "Installateur Unix affiché par défaut. Utilisez la commande PowerShell sous Windows.",
     "about.title":
       "┌── À PROPOS ──────────────────────────────────────────┐",
     "about.cmd": "cat LISEZMOI.md",

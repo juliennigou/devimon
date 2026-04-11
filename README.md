@@ -13,7 +13,7 @@ Devimon is a terminal-native virtual pet that lives in your shell. It watches yo
 
 ## Install
 
-### Option 1 — One-line installer (recommended, no Rust required)
+### Option 1 — One-line installer on macOS/Linux (recommended, no Rust required)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/juliennigou/devimon/main/install.sh | bash
@@ -21,7 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/juliennigou/devimon/main/install.sh
 
 The installer automatically detects your OS and architecture, downloads the right pre-built binary from GitHub Releases, and puts it in `/usr/local/bin`. No Rust needed.
 
-Supported platforms:
+Platform asset names:
 
 | Platform | Binary |
 |---|---|
@@ -29,10 +29,22 @@ Supported platforms:
 | macOS Intel | `devimon-macos-x86_64` |
 | Linux x86_64 | `devimon-linux-x86_64` |
 | Linux ARM64 | `devimon-linux-arm64` |
+| Windows x86_64 | `devimon-windows-x86_64.exe` |
+| Windows ARM64 | `devimon-windows-arm64.exe` |
 
 If a pre-built binary isn't available for your platform and `cargo` is installed, the installer will automatically fall back to building from source.
 
-### Option 2 — Manual binary download
+### Option 2 — Windows installer
+
+Run this in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/juliennigou/devimon/main/install.ps1 | iex
+```
+
+The Windows installer downloads the latest `.exe` into `%USERPROFILE%\.devimon\bin`, or falls back to `cargo install` if no Windows release asset is published yet.
+
+### Option 3 — Manual binary download
 
 Go to [Releases](https://github.com/juliennigou/devimon/releases/latest), download the `v0.1.6` binary for your platform, then:
 
@@ -41,7 +53,9 @@ chmod +x devimon-macos-arm64          # adjust filename for your platform
 sudo mv devimon-macos-arm64 /usr/local/bin/devimon
 ```
 
-### Option 3 — From source with cargo (requires Rust)
+On Windows, place `devimon-windows-x86_64.exe` somewhere on your `PATH` and rename it to `devimon.exe` if you want the shorter command.
+
+### Option 4 — From source with cargo (requires Rust)
 
 ```bash
 cargo install --git https://github.com/juliennigou/devimon --locked
@@ -218,6 +232,7 @@ devimon/
 ├── cloudflare/
 │   ├── worker/        Cloudflare Worker (Node.js + D1)
 │   └── site/          Static leaderboard website
-├── install.sh         One-line installer
+├── install.sh         macOS/Linux installer
+├── install.ps1        Windows installer
 └── Cargo.toml
 ```

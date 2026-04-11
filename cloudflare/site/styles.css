@@ -265,6 +265,8 @@ pre {
     max-width: 1100px;
     margin: 32px auto 0;
     padding: 0 20px;
+    display: grid;
+    gap: 14px;
 }
 
 .terminal-window {
@@ -372,6 +374,104 @@ pre {
     line-height: 1.2;
     margin: 6px 0;
     text-shadow: 0 0 12px rgba(0, 255, 136, 0.15);
+}
+
+.install-panel {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(10, 18, 14, 0.96), rgba(6, 12, 10, 0.92));
+    box-shadow: var(--glow-green);
+    padding: 14px 16px;
+}
+
+.install-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.install-panel-headline {
+    display: grid;
+    gap: 8px;
+}
+
+.install-panel-meta {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.install-mode-switch {
+    display: inline-flex;
+    width: fit-content;
+    border: 1px solid rgba(0, 255, 136, 0.14);
+    border-radius: 999px;
+    background: rgba(4, 9, 7, 0.9);
+    overflow: hidden;
+}
+
+.install-mode-btn {
+    border: 0;
+    border-right: 1px solid rgba(0, 255, 136, 0.1);
+    background: transparent;
+    color: var(--text-dim);
+    padding: 6px 12px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.install-mode-btn:last-child {
+    border-right: 0;
+}
+
+.install-mode-btn:hover {
+    color: var(--text);
+}
+
+.install-mode-btn.active {
+    background: rgba(0, 255, 136, 0.14);
+    color: var(--green);
+}
+
+.install-label {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.install-os {
+    color: var(--yellow);
+    font-size: 12px;
+}
+
+.install-copy-btn {
+    white-space: nowrap;
+}
+
+.install-command {
+    margin: 0;
+    padding: 12px 14px;
+    border: 1px solid rgba(0, 255, 136, 0.18);
+    border-radius: 6px;
+    background: rgba(4, 9, 7, 0.96);
+    color: var(--cyan);
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+}
+
+.install-hint {
+    margin-top: 10px;
+    color: var(--text-dim);
+    font-size: 12px;
 }
 
 /* ── Sections ───────────────────────────────────────────────────────── */
@@ -817,6 +917,25 @@ tbody tr:hover {
         padding: 12px 14px;
         min-height: 160px;
         overflow-x: auto;
+    }
+    .install-panel {
+        padding: 12px 14px;
+    }
+    .install-panel-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+    .install-panel-headline {
+        width: 100%;
+    }
+    .install-mode-switch {
+        width: 100%;
+    }
+    .install-mode-btn {
+        flex: 1 1 0;
+    }
+    .install-copy-btn {
+        width: 100%;
     }
 
     /* Long commands wrap instead of overflow */

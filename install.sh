@@ -32,8 +32,8 @@ case "${OS}" in
     ;;
   *)
     echo "error: unsupported operating system: ${OS}" >&2
-    echo "       On Windows, download the binary manually from:" >&2
-    echo "       https://github.com/${REPO}/releases/latest" >&2
+    echo "       On Windows, run this in PowerShell instead:" >&2
+    echo "       irm https://raw.githubusercontent.com/${REPO}/main/install.ps1 | iex" >&2
     exit 1
     ;;
 esac

@@ -138,11 +138,27 @@ impl SaveFile {
 // ── Persistence ───────────────────────────────────────────────────────────────
 
 pub fn devimon_dir() -> io::Result<PathBuf> {
-    let base = dirs::home_dir()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no home directory"))?;
-    let dir = base.join(".devimon");
+    let dir = platform_devimon_dir()?;
     fs::create_dir_all(&dir)?;
     Ok(dir)
+}
+
+#[cfg(windows)]
+fn platform_devimon_dir() -> io::Result<PathBuf> {
+    if let Some(base) = dirs::data_local_dir() {
+        return Ok(base.join("Devimon"));
+    }
+
+    let base = dirs::home_dir()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no home directory"))?;
+    Ok(base.join(".devimon"))
+}
+
+#[cfg(not(windows))]
+fn platform_devimon_dir() -> io::Result<PathBuf> {
+    let base = dirs::home_dir()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no home directory"))?;
+    Ok(base.join(".devimon"))
 }
 
 pub fn save_path() -> io::Result<PathBuf> {

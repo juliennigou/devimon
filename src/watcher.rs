@@ -41,7 +41,7 @@ fn watch_inner(path: &Path) -> notify::Result<()> {
                 }
                 for p in event.paths {
                     let path_str = p.to_string_lossy().to_string();
-                    if should_ignore(&path_str) {
+                    if should_ignore(&p) {
                         continue;
                     }
                     // Debounce repeated writes to the same file.
@@ -69,25 +69,69 @@ fn watch_inner(path: &Path) -> notify::Result<()> {
     Ok(())
 }
 
-fn should_ignore(path: &str) -> bool {
-    let ignored_segments = [
-        "/.git/",
-        "/target/",
-        "/node_modules/",
-        "/.devimon/",
-        "/dist/",
-        "/build/",
-        "/.next/",
-        "/.cache/",
+fn should_ignore(path: &Path) -> bool {
+    let ignored_dirs = [
+        ".git",
+        "target",
+        "node_modules",
+        ".devimon",
+        "dist",
+        "build",
+        ".next",
+        ".cache",
     ];
-    if ignored_segments.iter().any(|seg| path.contains(seg)) {
+    let path_str = path.as_os_str().to_string_lossy();
+    let mut segments = path_str
+        .split(['/', '\\'])
+        .filter(|segment| !segment.is_empty());
+
+    if segments
+        .clone()
+        .any(|segment| ignored_dirs.contains(&segment))
+    {
         return true;
     }
+
     // Hidden files and editor swap files.
-    if let Some(name) = Path::new(path).file_name().and_then(|n| n.to_str()) {
+    if let Some(name) = segments.next_back() {
         if name.starts_with('.') || name.ends_with('~') || name.ends_with(".swp") {
             return true;
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_ignore;
+    use std::path::Path;
+
+    #[test]
+    fn ignores_common_directories_with_unix_paths() {
+        assert!(should_ignore(Path::new("/tmp/project/.git/config")));
+        assert!(should_ignore(Path::new(
+            "/tmp/project/node_modules/react/index.js"
+        )));
+    }
+
+    #[test]
+    fn ignores_common_directories_with_windows_paths() {
+        assert!(should_ignore(Path::new(
+            r"C:\Users\dev\project\.git\config"
+        )));
+        assert!(should_ignore(Path::new(
+            r"C:\Users\dev\project\node_modules\react\index.js"
+        )));
+    }
+
+    #[test]
+    fn ignores_hidden_and_swap_files() {
+        assert!(should_ignore(Path::new("/tmp/project/.env")));
+        assert!(should_ignore(Path::new("/tmp/project/main.rs.swp")));
+    }
+
+    #[test]
+    fn keeps_normal_source_files() {
+        assert!(!should_ignore(Path::new("/tmp/project/src/main.rs")));
+    }
 }

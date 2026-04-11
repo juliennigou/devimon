@@ -13,6 +13,7 @@ use cloud::{PollLoginStatus, SyncResponse};
 use colored::*;
 use save::SaveFile;
 use std::env;
+use std::path::{Path, PathBuf};
 use std::process;
 use std::thread;
 use std::time::Duration;
@@ -431,8 +432,7 @@ fn cmd_update() -> Result<(), String> {
     let current_exe =
         std::env::current_exe().map_err(|e| format!("cannot locate current binary: {}", e))?;
 
-    // Write to a temp file beside the binary, then atomically rename.
-    let tmp = current_exe.with_extension("update-tmp");
+    let tmp = staged_update_path(&current_exe);
     std::fs::write(&tmp, &bytes).map_err(|e| format!("failed to write update to disk: {}", e))?;
 
     #[cfg(unix)]
@@ -442,18 +442,8 @@ fn cmd_update() -> Result<(), String> {
             .map_err(|e| format!("failed to set binary permissions: {}", e))?;
     }
 
-    std::fs::rename(&tmp, &current_exe)
-        .map_err(|e| format!("failed to replace binary (try with sudo?): {}", e))?;
-
-    println!(
-        "{}",
-        format!(
-            "Updated to {}! Restart devimon to use the new version.",
-            tag
-        )
-        .bright_green()
-        .bold()
-    );
+    let status = replace_current_exe(&tmp, &current_exe, tag)?;
+    println!("{}", status.bright_green().bold());
     Ok(())
 }
 
@@ -463,12 +453,77 @@ fn platform_asset_name() -> Result<&'static str, String> {
         ("macos", "x86_64") => Ok("devimon-macos-x86_64"),
         ("linux", "x86_64") => Ok("devimon-linux-x86_64"),
         ("linux", "aarch64") => Ok("devimon-linux-arm64"),
+        ("windows", "x86_64") => Ok("devimon-windows-x86_64.exe"),
+        ("windows", "aarch64") => Ok("devimon-windows-arm64.exe"),
         (os, arch) => Err(format!(
             "no pre-built binary for {}-{}. \
              Build from source: cargo install --git https://github.com/{} --locked --force",
             os, arch, GITHUB_REPO
         )),
     }
+}
+
+fn staged_update_path(current_exe: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        return current_exe.with_extension("update-tmp.exe");
+    }
+
+    #[cfg(not(windows))]
+    {
+        current_exe.with_extension("update-tmp")
+    }
+}
+
+#[cfg(not(windows))]
+fn replace_current_exe(tmp: &Path, current_exe: &Path, tag: &str) -> Result<String, String> {
+    std::fs::rename(tmp, current_exe)
+        .map_err(|e| format!("failed to replace binary (try with sudo?): {}", e))?;
+    Ok(format!(
+        "Updated to {}! Restart devimon to use the new version.",
+        tag
+    ))
+}
+
+#[cfg(windows)]
+fn replace_current_exe(tmp: &Path, current_exe: &Path, tag: &str) -> Result<String, String> {
+    let script_path =
+        std::env::temp_dir().join(format!("devimon-update-{}-{}.ps1", process::id(), tag));
+    let script = format!(
+        "$tmp = '{tmp}'\n\
+         $dest = '{dest}'\n\
+         for ($i = 0; $i -lt 30; $i++) {{\n\
+           try {{\n\
+             Move-Item -LiteralPath $tmp -Destination $dest -Force\n\
+             Remove-Item -LiteralPath $PSCommandPath -Force\n\
+             exit 0\n\
+           }} catch {{\n\
+             Start-Sleep -Milliseconds 500\n\
+           }}\n\
+         }}\n\
+         Write-Error 'Failed to replace devimon.exe after update.'\n\
+         exit 1\n",
+        tmp = escape_powershell_literal(tmp),
+        dest = escape_powershell_literal(current_exe)
+    );
+    std::fs::write(&script_path, script)
+        .map_err(|e| format!("failed to create update helper script: {}", e))?;
+
+    std::process::Command::new("powershell")
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+        .arg(&script_path)
+        .spawn()
+        .map_err(|e| format!("failed to launch Windows updater helper: {}", e))?;
+
+    Ok(format!(
+        "Update to {} has been staged. Once this process exits, the binary will be replaced. Restart devimon in a new shell.",
+        tag
+    ))
+}
+
+#[cfg(windows)]
+fn escape_powershell_literal(path: &Path) -> String {
+    path.display().to_string().replace('\'', "''")
 }
 
 fn cmd_sync() -> Result<(), String> {
