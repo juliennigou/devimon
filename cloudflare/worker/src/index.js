@@ -4,6 +4,9 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
+const ALLOWED_STAGES = new Set(["Baby", "Young", "Evolved"]);
+const MAX_SYNC_LEVEL = 10000;
+
 export default {
   async fetch(request, env) {
     try {
@@ -387,10 +390,18 @@ async function handleMe(session, env) {
 
 async function handleSync(request, env, session) {
   const body = await readJson(request);
-  if (!body.device_id || !body.snapshot) {
-    throw new HttpError(400, "device_id and snapshot are required");
+  if (typeof body.device_id !== "string" || !body.device_id.trim()) {
+    throw new HttpError(400, "device_id is required");
+  }
+  if (!body.snapshot || typeof body.snapshot !== "object" || Array.isArray(body.snapshot)) {
+    throw new HttpError(400, "snapshot is required");
   }
 
+  const deviceId = body.device_id.trim();
+  const clientMonsterId =
+    typeof body.monster_id === "string" && body.monster_id.trim()
+      ? body.monster_id.trim()
+      : null;
   const snapshot = validateSnapshot(body.snapshot);
   const syncedAt = nowIso();
 
@@ -402,7 +413,7 @@ async function handleSync(request, env, session) {
         account_id = excluded.account_id,
         last_seen_at = excluded.last_seen_at`
   )
-    .bind(body.device_id, session.account_id, syncedAt, syncedAt)
+    .bind(deviceId, session.account_id, syncedAt, syncedAt)
     .run();
 
   const existing = await env.DB.prepare(
@@ -413,7 +424,8 @@ async function handleSync(request, env, session) {
     .bind(session.account_id)
     .first();
 
-  const monsterId = existing?.monster_id || body.monster_id || crypto.randomUUID();
+  // Monster ownership is server-side: client-supplied IDs are ignored here.
+  const monsterId = existing?.monster_id || crypto.randomUUID();
 
   await env.DB.prepare(
     `INSERT INTO monsters (
@@ -421,9 +433,8 @@ async function handleSync(request, env, session) {
         hunger, energy, mood, last_active_at, updated_at
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(monster_id)
+      ON CONFLICT(account_id)
       DO UPDATE SET
-        account_id = excluded.account_id,
         name = excluded.name,
         level = excluded.level,
         xp = excluded.xp,
@@ -451,18 +462,31 @@ async function handleSync(request, env, session) {
     )
     .run();
 
+  const canonicalMonster = await env.DB.prepare(
+    `SELECT monster_id
+       FROM monsters
+      WHERE account_id = ?`
+  )
+    .bind(session.account_id)
+    .first();
+
+  if (!canonicalMonster?.monster_id) {
+    throw new HttpError(500, "failed to resolve monster ownership");
+  }
+
   await env.DB.prepare(
     `INSERT INTO sync_history (id, monster_id, device_id, received_at, payload_json)
       VALUES (?, ?, ?, ?, ?)`
   )
     .bind(
       crypto.randomUUID(),
-      monsterId,
-      body.device_id,
+      canonicalMonster.monster_id,
+      deviceId,
       syncedAt,
       JSON.stringify({
-        device_id: body.device_id,
-        monster_id: body.monster_id || null,
+        device_id: deviceId,
+        client_monster_id: clientMonsterId,
+        resolved_monster_id: canonicalMonster.monster_id,
         snapshot,
       })
     )
@@ -486,7 +510,7 @@ async function handleSync(request, env, session) {
     .first();
 
   return json({
-    monster_id: monsterId,
+    monster_id: canonicalMonster.monster_id,
     synced_at: syncedAt,
     leaderboard_rank: rankRow?.rank ? Number(rankRow.rank) : null,
   });
@@ -502,22 +526,81 @@ function validateSnapshot(snapshot) {
 
   const numericKeys = ["level", "xp", "total_xp", "hunger", "energy", "mood"];
   for (const key of numericKeys) {
-    if (typeof snapshot[key] !== "number" || Number.isNaN(snapshot[key])) {
+    if (typeof snapshot[key] !== "number" || !Number.isFinite(snapshot[key])) {
       throw new HttpError(400, `snapshot.${key} must be a number`);
     }
   }
 
+  if (!Number.isInteger(snapshot.level) || snapshot.level < 1 || snapshot.level > MAX_SYNC_LEVEL) {
+    throw new HttpError(400, "snapshot.level is invalid");
+  }
+  if (!Number.isInteger(snapshot.xp) || snapshot.xp < 0) {
+    throw new HttpError(400, "snapshot.xp is invalid");
+  }
+  if (!Number.isInteger(snapshot.total_xp) || snapshot.total_xp < 0) {
+    throw new HttpError(400, "snapshot.total_xp is invalid");
+  }
+
+  const level = snapshot.level;
+  const xp = snapshot.xp;
+  const totalXp = snapshot.total_xp;
+  const stage = normalizeStage(snapshot.stage, level);
+  const lastActiveAt = parseIsoTimestamp(snapshot.last_active_at, "snapshot.last_active_at");
+  const expectedTotalXp = totalXpForLevel(level) + xp;
+  const xpToNext = 10 + level * 5;
+
+  if (xp >= xpToNext) {
+    throw new HttpError(400, "snapshot.xp is inconsistent with snapshot.level");
+  }
+
+  if (totalXp !== expectedTotalXp) {
+    throw new HttpError(400, "snapshot.level, snapshot.xp, and snapshot.total_xp are inconsistent");
+  }
+
   return {
     name: snapshot.name.trim().slice(0, 40),
-    level: Math.max(1, Math.floor(snapshot.level)),
-    xp: Math.max(0, Math.floor(snapshot.xp)),
-    total_xp: Math.max(0, Math.floor(snapshot.total_xp)),
-    stage: snapshot.stage,
+    level,
+    xp,
+    total_xp: totalXp,
+    stage,
     hunger: clamp(snapshot.hunger, 0, 100),
     energy: clamp(snapshot.energy, 0, 100),
     mood: clamp(snapshot.mood, 0, 100),
-    last_active_at: new Date(snapshot.last_active_at).toISOString(),
+    last_active_at: lastActiveAt,
   };
+}
+
+function normalizeStage(stage, level) {
+  const value = stage.trim();
+  if (!ALLOWED_STAGES.has(value)) {
+    throw new HttpError(400, "snapshot.stage is invalid");
+  }
+
+  // First-pass anti-cheat: reject stages that are obviously impossible for the level.
+  if (value === "Young" && level < 5) {
+    throw new HttpError(400, "snapshot.stage is inconsistent with snapshot.level");
+  }
+  if (value === "Evolved" && level < 15) {
+    throw new HttpError(400, "snapshot.stage is inconsistent with snapshot.level");
+  }
+
+  return value;
+}
+
+function totalXpForLevel(level) {
+  let total = 0;
+  for (let currentLevel = 1; currentLevel < level; currentLevel += 1) {
+    total += 10 + currentLevel * 5;
+  }
+  return total;
+}
+
+function parseIsoTimestamp(value, fieldName) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new HttpError(400, `${fieldName} must be a valid ISO-8601 timestamp`);
+  }
+  return parsed.toISOString();
 }
 
 function clamp(value, min, max) {
