@@ -35,10 +35,10 @@ const INSTALL_VARIANTS = {
     hintKey: "install.hint.unix",
     logs: [
       "  Detecting platform... macOS / Linux",
-      "  Fetching latest release... v0.1.11",
+      "  Fetching latest release... v0.1.12",
       "  Downloading devimon for your platform...",
       "  Installing to /usr/local/bin/devimon",
-      "  Devimon v0.1.11 installed.",
+      "  Devimon v0.1.12 installed.",
     ],
   },
   windows: {
@@ -49,10 +49,10 @@ const INSTALL_VARIANTS = {
     hintKey: "install.hint.windows",
     logs: [
       "  Detecting platform... Windows",
-      "  Fetching latest release... v0.1.11",
+      "  Fetching latest release... v0.1.12",
       "  Downloading devimon-windows-x86_64.exe...",
       "  Installing to %USERPROFILE%\\.devimon\\bin\\devimon.exe",
-      "  Devimon v0.1.11 installed.",
+      "  Devimon v0.1.12 installed.",
     ],
   },
 };
