@@ -87,7 +87,7 @@ fn run(cli: Cli) -> Result<(), String> {
 fn load_state_or_err() -> Result<SaveFile, String> {
     match save::load_state().map_err(|e| e.to_string())? {
         Some(state) => Ok(state),
-        None => Err("no monster found — run `devimon spawn [name]` first.".into()),
+        None => Err("no monster found — run `devimon` to get started.".into()),
     }
 }
 

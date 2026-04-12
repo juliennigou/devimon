@@ -74,13 +74,10 @@ devimon --help
 ## Quick start
 
 ```bash
-# 1. Spawn your monster
-devimon spawn Embit --species ember   # or: --species tide / bloom
-
-# 2. Open the interactive TUI
+# 1. Launch the interactive TUI
 devimon
 
-# 3. Start the file watcher in your project directory
+# 2. Start the file watcher in your project directory
 #    (run this in a separate terminal while you code)
 devimon watch
 ```
@@ -127,8 +124,6 @@ Each stage unlocks new ASCII art and animations in the TUI. There are three spec
 
 ```
 devimon                   Launch the interactive TUI
-devimon spawn <name>      Spawn a new monster
-  --species <dragon|slime> Choose species (default: devimon)
 devimon status            Print current stats
 devimon feed              Feed your monster (+40 Hunger, +5 Mood)
 devimon play              Play with your monster (+30 Mood, -10 Energy)

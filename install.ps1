@@ -61,5 +61,4 @@ if ($pathEntries -notcontains $InstallDir) {
 
 Write-Host ""
 Write-Host "Get started:"
-Write-Host "  devimon spawn Embit --species ember"
 Write-Host "  devimon"

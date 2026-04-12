@@ -21,6 +21,7 @@ use ratatui::{
 };
 use std::io::{self, Stdout};
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -207,7 +208,40 @@ pub fn run() -> io::Result<()> {
     result
 }
 
+fn check_for_update_bg(result: Arc<Mutex<Option<String>>>) {
+    thread::spawn(move || {
+        let current = env!("CARGO_PKG_VERSION");
+        let client = match reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+        {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let resp = client
+            .get("https://api.github.com/repos/juliennigou/devimon/releases/latest")
+            .header("User-Agent", "devimon-updater")
+            .header("Accept", "application/vnd.github+json")
+            .send();
+        let tag = resp
+            .ok()
+            .filter(|r| r.status().is_success())
+            .and_then(|r| r.json::<serde_json::Value>().ok())
+            .and_then(|j| j["tag_name"].as_str().map(|s| s.trim_start_matches('v').to_string()));
+        if let Some(latest) = tag {
+            if latest != current {
+                if let Ok(mut guard) = result.lock() {
+                    *guard = Some(latest);
+                }
+            }
+        }
+    });
+}
+
 fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> io::Result<()> {
+    let update_available: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    check_for_update_bg(Arc::clone(&update_available));
+
     let mut app = initial_state()?;
     let mut last_game_tick = Instant::now();
     let mut last_animation_frame = Instant::now();
@@ -215,7 +249,8 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> io::Result<()> 
     let mut dino_accumulator = Duration::ZERO;
 
     loop {
-        terminal.draw(|f| draw(f, &app))?;
+        let update_ver = update_available.lock().ok().and_then(|g| g.clone());
+        terminal.draw(|f| draw(f, &app, update_ver.as_deref()))?;
 
         let mut timeout = std::cmp::min(
             GAME_TICK_RATE.saturating_sub(last_game_tick.elapsed()),
@@ -1225,7 +1260,7 @@ fn spawn_login_poller(
 
 // ── Top-level draw ────────────────────────────────────────────────────────────
 
-fn draw(f: &mut ratatui::Frame, app: &AppState) {
+fn draw(f: &mut ratatui::Frame, app: &AppState, update_available: Option<&str>) {
     let (status_label, status_color) = match app {
         AppState::Running { state, .. } if state.cloud.account.is_some() => {
             (" ● Online ", Color::Green)
@@ -1319,6 +1354,7 @@ fn draw(f: &mut ratatui::Frame, app: &AppState) {
             *settings_logout_confirm,
             *settings_logout_choice,
             *animation_tick,
+            update_available,
         ),
         AppState::Quit => {}
     }
@@ -1340,6 +1376,7 @@ fn draw_running(
     settings_logout_confirm: bool,
     settings_logout_choice: usize,
     animation_tick: u64,
+    update_available: Option<&str>,
 ) {
     let cols = Layout::default()
         .direction(Direction::Horizontal)
@@ -1361,6 +1398,7 @@ fn draw_running(
         settings_logout_confirm,
         settings_logout_choice,
         animation_tick,
+        update_available,
     );
 }
 
@@ -1485,9 +1523,10 @@ fn draw_content(
     settings_logout_confirm: bool,
     settings_logout_choice: usize,
     animation_tick: u64,
+    update_available: Option<&str>,
 ) {
     match selected_tab {
-        MenuTab::Home => draw_home(f, area, state, flash, animation_tick / 2),
+        MenuTab::Home => draw_home(f, area, state, flash, animation_tick / 2, update_available),
         MenuTab::Collection => {
             draw_collection(f, area, state, collection_cursor, flash, content_focused)
         }
@@ -1513,16 +1552,70 @@ fn draw_home(
     state: &SaveFile,
     flash: &Option<Flash>,
     animation_tick: u64,
+    update_available: Option<&str>,
 ) {
+    let has_update = update_available.is_some();
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
-        .constraints([Constraint::Min(0), Constraint::Length(2)])
+        .constraints(if has_update {
+            vec![
+                Constraint::Min(0),
+                Constraint::Length(3),
+                Constraint::Length(2),
+            ]
+        } else {
+            vec![
+                Constraint::Min(0),
+                Constraint::Length(0),
+                Constraint::Length(2),
+            ]
+        })
         .split(area);
 
     draw_monster_panel(f, rows[0], state.active_monster(), flash, animation_tick);
     draw_stats_panel(f, rows[0], state.active_monster());
-    draw_footer(f, rows[1], state);
+
+    if let Some(latest) = update_available {
+        let current = env!("CARGO_PKG_VERSION");
+        let pulse = if (animation_tick / 8) % 2 == 0 {
+            "↑"
+        } else {
+            "⬆"
+        };
+        let banner = Line::from(vec![
+            Span::styled(
+                format!(" {} ", pulse),
+                Style::default().fg(Color::Yellow),
+            ),
+            Span::styled(
+                format!("Update available: v{} → v{}", current, latest),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "  —  run ",
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(
+                "devimon update",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                " to upgrade",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]);
+        f.render_widget(
+            Paragraph::new(banner).alignment(Alignment::Center),
+            rows[1],
+        );
+    }
+
+    draw_footer(f, rows[2], state);
 }
 
 fn draw_monster_panel(
@@ -1838,7 +1931,7 @@ fn draw_collection(
     } else if n > 1 {
         " ↑↓ select  ·  Enter set main  ·  ← back"
     } else {
-        " spawn more with `devimon spawn <name>`  ·  ← back"
+        " spawn more with `devimon`  ·  ← back"
     };
     f.render_widget(
         Paragraph::new(Span::styled(hint, Style::default().fg(Color::DarkGray))),
