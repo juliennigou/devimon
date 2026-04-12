@@ -64,24 +64,29 @@ const MENU_ITEMS: &[MenuTab] = &[
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SettingsAction {
+    SyncNow,
     Disconnect,
 }
 
 impl SettingsAction {
     fn label(self) -> &'static str {
         match self {
+            SettingsAction::SyncNow => "Sync now",
             SettingsAction::Disconnect => "Disconnect GitHub",
         }
     }
 
     fn description(self) -> &'static str {
         match self {
+            SettingsAction::SyncNow => {
+                "Push cloud progression and verification status immediately."
+            }
             SettingsAction::Disconnect => "Clear the local cloud session on this device.",
         }
     }
 }
 
-const SETTINGS_ACTIONS: &[SettingsAction] = &[SettingsAction::Disconnect];
+const SETTINGS_ACTIONS: &[SettingsAction] = &[SettingsAction::SyncNow, SettingsAction::Disconnect];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum MiniGame {
@@ -1004,13 +1009,32 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> io::Result<()> {
                             created_at: Instant::now(),
                         });
                     }
-                } else if matches!(
-                    SETTINGS_ACTIONS.get(*settings_cursor),
-                    Some(SettingsAction::Disconnect)
-                ) && state.cloud.account.is_some()
-                {
-                    *settings_logout_confirm = true;
-                    *settings_logout_choice = 0;
+                } else if state.cloud.account.is_some() {
+                    match SETTINGS_ACTIONS.get(*settings_cursor) {
+                        Some(SettingsAction::SyncNow) => match cloud::sync_state(state) {
+                            Ok(sync) => {
+                                save::save_state(state).ok();
+                                *last_sync_attempt = Instant::now();
+                                *flash = Some(Flash {
+                                    message: sync_flash_message(&sync),
+                                    kind: FlashKind::Info,
+                                    created_at: Instant::now(),
+                                });
+                            }
+                            Err(err) => {
+                                *flash = Some(Flash {
+                                    message: format!("cloud sync failed: {}", err),
+                                    kind: FlashKind::Error,
+                                    created_at: Instant::now(),
+                                });
+                            }
+                        },
+                        Some(SettingsAction::Disconnect) => {
+                            *settings_logout_confirm = true;
+                            *settings_logout_choice = 0;
+                        }
+                        None => {}
+                    }
                 }
             }
 
@@ -1082,56 +1106,8 @@ fn maybe_sync(
         Ok(sync) => {
             save::save_state(state).ok();
             if should_replace_flash(flash) {
-                let status_suffix = sync
-                    .verification_status
-                    .map(|status| format!(" · {}", status.label()))
-                    .unwrap_or_default();
-                let message = match sync.leaderboard_rank {
-                    Some(rank) => match (sync.cloud_level, sync.accepted_xp_delta) {
-                        (Some(level), Some(accepted)) => {
-                            format!(
-                                "☁️ Sync ok — rank #{} · cloud lv.{}{} · +{} XP",
-                                rank, level, status_suffix, accepted
-                            )
-                        }
-                        (Some(level), None) => {
-                            format!(
-                                "☁️ Sync ok — rank #{} · cloud lv.{}{}",
-                                rank, level, status_suffix
-                            )
-                        }
-                        (None, Some(accepted)) => {
-                            format!(
-                                "☁️ Sync ok — rank #{}{} · +{} XP",
-                                rank, status_suffix, accepted
-                            )
-                        }
-                        (None, None) => format!("☁️ Sync ok — rank #{}{}", rank, status_suffix),
-                    },
-                    None => match (sync.cloud_level, sync.accepted_xp_delta) {
-                        (Some(level), Some(accepted)) => {
-                            format!(
-                                "☁️ Sync ok — cloud lv.{}{} · +{} XP",
-                                level, status_suffix, accepted
-                            )
-                        }
-                        (Some(level), None) => {
-                            format!("☁️ Sync ok — cloud lv.{}{}", level, status_suffix)
-                        }
-                        (None, Some(accepted)) => {
-                            format!("☁️ Sync ok{} · +{} XP", status_suffix, accepted)
-                        }
-                        (None, None) => format!("☁️ Sync ok{}", status_suffix),
-                    },
-                };
-                let capped_message = match (sync.requested_xp_delta, sync.accepted_xp_delta) {
-                    (Some(requested), Some(accepted)) if requested > accepted => {
-                        format!("{} · capped from +{} XP", message, requested)
-                    }
-                    _ => message,
-                };
                 *flash = Some(Flash {
-                    message: capped_message,
+                    message: sync_flash_message(&sync),
                     kind: FlashKind::Info,
                     created_at: Instant::now(),
                 });
@@ -1146,6 +1122,54 @@ fn maybe_sync(
                 });
             }
         }
+    }
+}
+
+fn sync_flash_message(sync: &cloud::SyncResponse) -> String {
+    let status_suffix = sync
+        .verification_status
+        .map(|status| format!(" · {}", status.label()))
+        .unwrap_or_default();
+    let message = match sync.leaderboard_rank {
+        Some(rank) => match (sync.cloud_level, sync.accepted_xp_delta) {
+            (Some(level), Some(accepted)) => {
+                format!(
+                    "☁️ Sync ok — rank #{} · cloud lv.{}{} · +{} XP",
+                    rank, level, status_suffix, accepted
+                )
+            }
+            (Some(level), None) => {
+                format!(
+                    "☁️ Sync ok — rank #{} · cloud lv.{}{}",
+                    rank, level, status_suffix
+                )
+            }
+            (None, Some(accepted)) => {
+                format!(
+                    "☁️ Sync ok — rank #{}{} · +{} XP",
+                    rank, status_suffix, accepted
+                )
+            }
+            (None, None) => format!("☁️ Sync ok — rank #{}{}", rank, status_suffix),
+        },
+        None => match (sync.cloud_level, sync.accepted_xp_delta) {
+            (Some(level), Some(accepted)) => {
+                format!(
+                    "☁️ Sync ok — cloud lv.{}{} · +{} XP",
+                    level, status_suffix, accepted
+                )
+            }
+            (Some(level), None) => format!("☁️ Sync ok — cloud lv.{}{}", level, status_suffix),
+            (None, Some(accepted)) => format!("☁️ Sync ok{} · +{} XP", status_suffix, accepted),
+            (None, None) => format!("☁️ Sync ok{}", status_suffix),
+        },
+    };
+
+    match (sync.requested_xp_delta, sync.accepted_xp_delta) {
+        (Some(requested), Some(accepted)) if requested > accepted => {
+            format!("{} · capped from +{} XP", message, requested)
+        }
+        _ => message,
     }
 }
 
@@ -2336,7 +2360,7 @@ fn draw_settings(
     } else if !content_focused {
         " → enter settings  ·  ↑↓ menu"
     } else {
-        " ↑↓ select  ·  Enter open  ·  ← back"
+        " ↑↓ select  ·  Enter run  ·  ← back"
     };
     f.render_widget(
         Paragraph::new(Span::styled(hint, Style::default().fg(Color::DarkGray))),
