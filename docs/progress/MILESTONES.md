@@ -114,3 +114,10 @@ Pending next:
 - Removed ranked index creation from `schema.sql`, which was unsafe against older `monsters` tables.
 - Moved ranked leaderboard index creation into the Worker's lazy runtime migration helper.
 - Updated Cloudflare deployment docs to describe `schema.sql` as bootstrap schema plus runtime backfills.
+
+### Milestone 12
+
+- Defined the next leaderboard product model around explicit `Verified` and `Unverified` trust status.
+- Kept the leaderboard level-based instead of switching to a score-only competitive view.
+- Recommended official ranking for `Verified` entries only, while keeping `Unverified` monsters visible.
+- Recorded the trust-model direction as a follow-up audit track and checklist item.

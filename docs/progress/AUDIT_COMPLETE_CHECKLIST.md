@@ -6,6 +6,7 @@ This file records what still needs to happen before the Devimon audit can be con
 
 - Strengthen the final evolution gate so it reflects real multi-day care quality.
 - Improve XP semantics further so real coding is rewarded more reliably than noisy file activity.
+- Finalize the cloud trust model so players clearly understand `Verified` versus `Unverified` leaderboard status.
 - Add broader test coverage for:
   - sync edge cases
   - repeated capped sync behavior

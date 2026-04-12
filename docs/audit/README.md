@@ -16,6 +16,8 @@ This folder splits the audit into concrete fix tracks so each issue can move fro
   Redefine Dino as a monster-unlock signal instead of a direct XP farm.
 - `06-testing-and-observability.md`
   Add the tests and telemetry needed to trust progression and anti-cheat logic.
+- `07-verified-unverified-leaderboard.md`
+  Keep the level leaderboard fun while making trust explicit with a simple two-state model.
 
 ## Priority
 
@@ -25,6 +27,7 @@ This folder splits the audit into concrete fix tracks so each issue can move fro
 4. Evolution, needs, and time model
 5. Testing and observability
 6. Dino monster unlock rules
+7. Verified / unverified leaderboard model
 
 ## Product Direction
 
