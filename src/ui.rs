@@ -1082,29 +1082,46 @@ fn maybe_sync(
         Ok(sync) => {
             save::save_state(state).ok();
             if should_replace_flash(flash) {
+                let status_suffix = sync
+                    .verification_status
+                    .map(|status| format!(" · {}", status.label()))
+                    .unwrap_or_default();
                 let message = match sync.leaderboard_rank {
-                    Some(rank) => match (sync.trusted_level, sync.accepted_xp_delta) {
+                    Some(rank) => match (sync.cloud_level, sync.accepted_xp_delta) {
                         (Some(level), Some(accepted)) => {
                             format!(
-                                "☁️ Sync ok — rang #{} · cloud lv.{} · +{} XP",
-                                rank, level, accepted
+                                "☁️ Sync ok — rank #{} · cloud lv.{}{} · +{} XP",
+                                rank, level, status_suffix, accepted
                             )
                         }
                         (Some(level), None) => {
-                            format!("☁️ Sync ok — rang #{} · cloud lv.{}", rank, level)
+                            format!(
+                                "☁️ Sync ok — rank #{} · cloud lv.{}{}",
+                                rank, level, status_suffix
+                            )
                         }
                         (None, Some(accepted)) => {
-                            format!("☁️ Sync ok — rang #{} · +{} XP", rank, accepted)
+                            format!(
+                                "☁️ Sync ok — rank #{}{} · +{} XP",
+                                rank, status_suffix, accepted
+                            )
                         }
-                        (None, None) => format!("☁️ Sync ok — rang #{}", rank),
+                        (None, None) => format!("☁️ Sync ok — rank #{}{}", rank, status_suffix),
                     },
-                    None => match (sync.trusted_level, sync.accepted_xp_delta) {
+                    None => match (sync.cloud_level, sync.accepted_xp_delta) {
                         (Some(level), Some(accepted)) => {
-                            format!("☁️ Sync ok — cloud lv.{} · +{} XP", level, accepted)
+                            format!(
+                                "☁️ Sync ok — cloud lv.{}{} · +{} XP",
+                                level, status_suffix, accepted
+                            )
                         }
-                        (Some(level), None) => format!("☁️ Sync ok — cloud lv.{}", level),
-                        (None, Some(accepted)) => format!("☁️ Sync ok — +{} XP", accepted),
-                        (None, None) => "☁️ Sync ok".to_string(),
+                        (Some(level), None) => {
+                            format!("☁️ Sync ok — cloud lv.{}{}", level, status_suffix)
+                        }
+                        (None, Some(accepted)) => {
+                            format!("☁️ Sync ok{} · +{} XP", status_suffix, accepted)
+                        }
+                        (None, None) => format!("☁️ Sync ok{}", status_suffix),
                     },
                 };
                 let capped_message = match (sync.requested_xp_delta, sync.accepted_xp_delta) {
@@ -1660,10 +1677,19 @@ fn draw_footer(f: &mut ratatui::Frame, area: Rect, state: &SaveFile) {
         } else {
             "cloud synced"
         };
-        let trusted = match (state.cloud.leaderboard_rank, state.cloud.trusted_level) {
-            (Some(rank), Some(level)) => format!(" · rank #{} · cloud lv.{}", rank, level),
-            (Some(rank), None) => format!(" · rank #{}", rank),
-            (None, Some(level)) => format!(" · cloud lv.{}", level),
+        let verification = state
+            .cloud
+            .verification_status
+            .map(|status| format!(" · {}", status.label()))
+            .unwrap_or_default();
+        let trusted = match (state.cloud.leaderboard_rank, state.cloud.cloud_level) {
+            (Some(rank), Some(level)) => format!(
+                " · official rank #{} · cloud lv.{}{}",
+                rank, level, verification
+            ),
+            (Some(rank), None) => format!(" · official rank #{}{}", rank, verification),
+            (None, Some(level)) => format!(" · cloud lv.{}{}", level, verification),
+            (None, None) if !verification.is_empty() => verification,
             (None, None) => String::new(),
         };
         let pending = if state.cloud.pending_ranked_xp_delta > 0 {
@@ -2192,24 +2218,29 @@ fn draw_settings(
             Line::from(Span::styled(
                 match (
                     state.cloud.leaderboard_rank,
-                    state.cloud.trusted_level,
-                    state.cloud.trusted_total_xp,
-                    state.cloud.trusted_stage,
+                    state.cloud.cloud_level,
+                    state.cloud.cloud_total_xp,
+                    state.cloud.cloud_stage,
+                    state.cloud.verification_status,
                 ) {
-                    (Some(rank), Some(level), Some(total_xp), Some(stage)) => format!(
-                        "Trusted rank  #{}  ·  lv.{} {}  ·  {} XP",
-                        rank,
+                    (Some(rank), Some(level), Some(total_xp), Some(stage), Some(status)) => {
+                        format!(
+                            "Official rank  #{}  ·  lv.{} {}  ·  {} XP  ·  {}",
+                            rank,
+                            level,
+                            stage.label(),
+                            total_xp,
+                            status.label()
+                        )
+                    }
+                    (_, Some(level), Some(total_xp), Some(stage), Some(status)) => format!(
+                        "Cloud progression  lv.{} {}  ·  {} XP  ·  {}",
                         level,
                         stage.label(),
-                        total_xp
+                        total_xp,
+                        status.label()
                     ),
-                    (_, Some(level), Some(total_xp), Some(stage)) => format!(
-                        "Trusted cloud  lv.{} {}  ·  {} XP",
-                        level,
-                        stage.label(),
-                        total_xp
-                    ),
-                    _ => "Trusted cloud  waiting for first sync".to_string(),
+                    _ => "Cloud progression  waiting for first sync".to_string(),
                 },
                 Style::default().fg(Color::DarkGray),
             )),

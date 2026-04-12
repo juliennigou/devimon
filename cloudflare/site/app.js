@@ -10,6 +10,7 @@ const API_BASE =
 const apiBaseDisplay = document.querySelector("#api-base-display");
 const generatedAtEl = document.querySelector("#generated-at");
 const refreshButton = document.querySelector("#refresh-button");
+const verifiedFilterButton = document.querySelector("#verified-filter-button");
 const statusBanner = document.querySelector("#status-banner");
 const tbody = document.querySelector("#leaderboard-body");
 const ghStarsEl = document.querySelector("#gh-stars");
@@ -23,6 +24,7 @@ const installCopyButton = document.querySelector("#install-copy-button");
 const installModeButtons = document.querySelectorAll("[data-install-mode]");
 
 if (apiBaseDisplay) apiBaseDisplay.textContent = `${API_BASE}/api`;
+let verifiedOnlyFilter = false;
 
 const INSTALL_VARIANTS = {
   unix: {
@@ -198,12 +200,28 @@ window.addEventListener("resize", () => updateToggleSlider());
 
 // ── Refresh ─────────────────────────────────────────────────────────────
 refreshButton.addEventListener("click", () => loadLeaderboard());
+if (verifiedFilterButton) {
+  verifiedFilterButton.addEventListener("click", () => {
+    verifiedOnlyFilter = !verifiedOnlyFilter;
+    updateVerifiedFilterButton();
+    loadLeaderboard();
+  });
+}
 
 // ── Status banner ───────────────────────────────────────────────────────
 function setStatus(message, kind = "neutral") {
   statusBanner.textContent = message;
   statusBanner.className = "status-line";
   if (kind !== "neutral") statusBanner.classList.add(kind);
+}
+
+function updateVerifiedFilterButton() {
+  if (!verifiedFilterButton) return;
+  const key = verifiedOnlyFilter
+    ? "leaderboard.filter.verified"
+    : "leaderboard.filter.all";
+  verifiedFilterButton.setAttribute("data-i18n", key);
+  verifiedFilterButton.textContent = t(key);
 }
 
 // ── Render leaderboard ──────────────────────────────────────────────────
@@ -214,7 +232,7 @@ function renderLeaderboard(monsters) {
     const row = document.createElement("tr");
     row.className = "empty-row";
     row.innerHTML = `
-      <td colspan="6">
+      <td colspan="8">
         <span class="empty-ascii">
    ( ?_? )
   (       )
@@ -231,6 +249,7 @@ function renderLeaderboard(monsters) {
 
   for (const monster of monsters) {
     const rank = rankDisplay(monster.rank);
+    const trust = verificationDisplay(monster.verification_status);
     const sClass = stageClass(monster.stage);
     const xpPct = Math.round(((monster.total_xp || 0) / maxXp) * 100);
     const art = stageAscii(monster.stage);
@@ -238,7 +257,7 @@ function renderLeaderboard(monsters) {
       ? `<a class="gh-user" href="https://github.com/${escapeHtml(monster.github_username)}" target="_blank" rel="noopener">@${escapeHtml(monster.github_username)}</a>`
       : "";
     const row = document.createElement("tr");
-    row.style.animationDelay = `${monster.rank * 0.04}s`;
+    row.style.animationDelay = `${(monster.rank || 8) * 0.04}s`;
     row.innerHTML = `
       <td class="rank-cell ${rank.cls}">${rank.text}</td>
       <td class="art-cell"><span class="stage-art">${art}</span></td>
@@ -255,6 +274,7 @@ function renderLeaderboard(monsters) {
           <span class="xp-number">${(monster.total_xp || 0).toLocaleString()}</span>
         </div>
       </td>
+      <td><span class="trust-badge ${trust.cls}">${escapeHtml(trust.text)}</span></td>
       <td><span class="time-ago">${timeAgo(monster.last_active_at)}</span></td>
     `;
     tbody.appendChild(row);
@@ -265,17 +285,24 @@ function renderLeaderboard(monsters) {
 async function loadLeaderboard() {
   setStatus(t("leaderboard.loading"));
   refreshButton.disabled = true;
+  if (verifiedFilterButton) verifiedFilterButton.disabled = true;
   try {
-    const response = await fetch(`${API_BASE}/api/leaderboard?limit=25`);
+    const params = new URLSearchParams({ limit: "25" });
+    if (verifiedOnlyFilter) {
+      params.set("verified_only", "true");
+    }
+    const response = await fetch(`${API_BASE}/api/leaderboard?${params.toString()}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
     const data = await response.json();
     const monsters = data.monsters || [];
     renderLeaderboard(monsters);
 
-    if (monsterCountEl) monsterCountEl.textContent = monsters.length;
+    if (monsterCountEl) {
+      monsterCountEl.textContent = (data.monster_count ?? monsters.length).toString();
+    }
 
-    const playerSet = new Set(monsters.map((m) => m.monster_id?.split("-")[0]));
+    const playerSet = new Set(monsters.map((m) => m.github_username).filter(Boolean));
     if (playerCountEl)
       playerCountEl.textContent = playerSet.size || monsters.length;
 
@@ -283,11 +310,18 @@ async function loadLeaderboard() {
       generatedAtEl.textContent = new Date(data.generated_at).toLocaleString();
     }
 
-    setStatus(t("leaderboard.success"), "success");
+    const filterStatus = verifiedOnlyFilter
+      ? t("leaderboard.filter.status.verified")
+      : t("leaderboard.filter.status.all");
+    setStatus(
+      `${t("leaderboard.success")} ${filterStatus}`,
+      "success"
+    );
   } catch (error) {
     setStatus(t("leaderboard.error") + error.message, "error");
   } finally {
     refreshButton.disabled = false;
+    if (verifiedFilterButton) verifiedFilterButton.disabled = false;
   }
 }
 
@@ -515,6 +549,7 @@ function launchWanderingMonster() {
 }
 
 // ── Boot ─────────────────────────────────────────────────────────────────
+updateVerifiedFilterButton();
 loadLeaderboard();
 loadGitHubStars();
 restartOnboarding();

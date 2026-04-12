@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 
 import {
   computeAcceptedRankedProgression,
+  determineVerificationState,
   extractBearerToken,
   evaluateSuspiciousSync,
   maxXpGainSince,
   normalizeSeverity,
+  normalizeVerificationStatus,
   parseSuspiciousSyncQuery,
   progressionFromTotalXp,
   stageForLevel,
@@ -138,6 +140,7 @@ test("validateProfileSnapshot accepts profile-only snapshots", () => {
     hunger: 80,
     energy: 75,
     mood: 90,
+    total_xp: 90,
     last_active_at: "2026-04-11T22:00:00.000Z",
   });
 
@@ -145,6 +148,7 @@ test("validateProfileSnapshot accepts profile-only snapshots", () => {
   assert.equal(snapshot.hunger, 80);
   assert.equal(snapshot.energy, 75);
   assert.equal(snapshot.mood, 90);
+  assert.equal(snapshot.total_xp, 90);
 });
 
 test("validateProfileSnapshot rejects missing profile fields", () => {
@@ -155,7 +159,95 @@ test("validateProfileSnapshot rejects missing profile fields", () => {
         hunger: 80,
         energy: 75,
         mood: 90,
+        total_xp: 90,
       }),
     /snapshot.last_active_at is required/
   );
+});
+
+test("validateProfileSnapshot falls back for legacy clients without total_xp", () => {
+  const snapshot = validateProfileSnapshot(
+    {
+      name: "Embit",
+      hunger: 80,
+      energy: 75,
+      mood: 90,
+      last_active_at: "2026-04-11T22:00:00.000Z",
+    },
+    120
+  );
+
+  assert.equal(snapshot.total_xp, 120);
+});
+
+test("determineVerificationState verifies when trusted progression covers cloud total", () => {
+  const verification = determineVerificationState(
+    null,
+    progressionFromTotalXp(90),
+    {
+      ...progressionFromTotalXp(90),
+      acceptedDelta: 10,
+      requestedDelta: 10,
+      maxAcceptedDelta: 10,
+    },
+    [],
+    "2026-04-12T10:00:00.000Z"
+  );
+
+  assert.deepEqual(verification, {
+    status: "verified",
+    verifiedAt: "2026-04-12T10:00:00.000Z",
+    reason: "trusted_sync_history",
+  });
+});
+
+test("determineVerificationState keeps imported higher cloud total unverified", () => {
+  const verification = determineVerificationState(
+    null,
+    progressionFromTotalXp(250),
+    {
+      ...progressionFromTotalXp(90),
+      acceptedDelta: 10,
+      requestedDelta: 10,
+      maxAcceptedDelta: 10,
+    },
+    [],
+    "2026-04-12T10:00:00.000Z"
+  );
+
+  assert.deepEqual(verification, {
+    status: "unverified",
+    verifiedAt: null,
+    reason: "awaiting_trusted_sync_history",
+  });
+});
+
+test("determineVerificationState drops to unverified on suspicious syncs", () => {
+  const verification = determineVerificationState(
+    {
+      verification_status: "verified",
+      verified_at: "2026-04-11T10:00:00.000Z",
+    },
+    progressionFromTotalXp(90),
+    {
+      ...progressionFromTotalXp(90),
+      acceptedDelta: 10,
+      requestedDelta: 10,
+      maxAcceptedDelta: 10,
+    },
+    [{ reason: "ranked_xp_capped", severity: "high" }],
+    "2026-04-12T10:00:00.000Z"
+  );
+
+  assert.deepEqual(verification, {
+    status: "unverified",
+    verifiedAt: null,
+    reason: "suspicious_activity",
+  });
+});
+
+test("normalizeVerificationStatus falls back safely", () => {
+  assert.equal(normalizeVerificationStatus("VERIFIED"), "verified");
+  assert.equal(normalizeVerificationStatus("mystery"), "unverified");
+  assert.equal(normalizeVerificationStatus(null), "unverified");
 });

@@ -621,6 +621,31 @@ pre {
     background: rgba(0, 255, 136, 0.04);
 }
 
+.leaderboard-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.leaderboard-legend {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 12px;
+}
+
+.legend-copy {
+    color: var(--text-dim);
+}
+
+.legend-sep {
+    color: var(--border-glow);
+}
+
 /* ── Table ──────────────────────────────────────────────────────────── */
 .table-wrap {
     overflow-x: auto;
@@ -679,6 +704,10 @@ tbody tr:hover {
 
 .rank-crown {
     font-size: 14px;
+}
+
+.rank-unverified {
+    color: var(--text-dim);
 }
 
 /* ASCII art cell */
@@ -750,6 +779,27 @@ tbody tr:hover {
 .stage-evolved {
     color: var(--yellow);
     border-color: rgba(255, 208, 0, 0.3);
+    background: rgba(255, 208, 0, 0.06);
+}
+
+.trust-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border: 1px solid;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.trust-verified {
+    color: var(--green);
+    border-color: rgba(0, 255, 136, 0.3);
+    background: rgba(0, 255, 136, 0.06);
+}
+
+.trust-unverified {
+    color: var(--yellow);
+    border-color: rgba(255, 208, 0, 0.25);
     background: rgba(255, 208, 0, 0.06);
 }
 

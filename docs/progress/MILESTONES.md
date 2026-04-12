@@ -121,3 +121,11 @@ Pending next:
 - Kept the leaderboard level-based instead of switching to a score-only competitive view.
 - Recommended official ranking for `Verified` entries only, while keeping `Unverified` monsters visible.
 - Recorded the trust-model direction as a follow-up audit track and checklist item.
+
+### Milestone 13
+
+- Implemented explicit `Verified` / `Unverified` trust state in the worker data model.
+- Restored cloud display progression for synced monsters while keeping official ranking verified-only.
+- Added official-rank filtering rules so unverified monsters stay visible without receiving rank placement.
+- Updated the Rust client and TUI to show cloud progression, verification status, and official rank separately.
+- Updated the leaderboard site with trust badges and a `Verified only` filter.

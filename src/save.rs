@@ -13,6 +13,22 @@ pub struct AccountSession {
     pub session_token: String,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudVerificationStatus {
+    Verified,
+    Unverified,
+}
+
+impl CloudVerificationStatus {
+    pub fn label(self) -> &'static str {
+        match self {
+            CloudVerificationStatus::Verified => "Verified",
+            CloudVerificationStatus::Unverified => "Unverified",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CloudState {
     #[serde(default = "new_device_id")]
@@ -23,6 +39,14 @@ pub struct CloudState {
     pub account: Option<AccountSession>,
     #[serde(default)]
     pub last_synced_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub cloud_total_xp: Option<u32>,
+    #[serde(default)]
+    pub cloud_level: Option<u32>,
+    #[serde(default)]
+    pub cloud_stage: Option<Stage>,
+    #[serde(default)]
+    pub verification_status: Option<CloudVerificationStatus>,
     #[serde(default)]
     pub trusted_total_xp: Option<u32>,
     #[serde(default)]
@@ -50,6 +74,10 @@ impl Default for CloudState {
             monster_id: None,
             account: None,
             last_synced_at: None,
+            cloud_total_xp: None,
+            cloud_level: None,
+            cloud_stage: None,
+            verification_status: None,
             trusted_total_xp: None,
             trusted_level: None,
             trusted_stage: None,
@@ -265,6 +293,16 @@ fn normalize(mut state: SaveFile) -> SaveFile {
         state.cloud.device_id = new_device_id();
     }
 
+    if state.cloud.cloud_total_xp.is_none() {
+        state.cloud.cloud_total_xp = state.cloud.trusted_total_xp;
+    }
+    if state.cloud.cloud_level.is_none() {
+        state.cloud.cloud_level = state.cloud.trusted_level;
+    }
+    if state.cloud.cloud_stage.is_none() {
+        state.cloud.cloud_stage = state.cloud.trusted_stage;
+    }
+
     if state.games.dino.best_time_ms > 0 {
         state.games.dino.record_unlock_claimed = true;
     }
@@ -307,6 +345,10 @@ pub fn clear_session(state: &mut SaveFile) {
     state.cloud.account = None;
     state.cloud.monster_id = None;
     state.cloud.last_synced_at = None;
+    state.cloud.cloud_total_xp = None;
+    state.cloud.cloud_level = None;
+    state.cloud.cloud_stage = None;
+    state.cloud.verification_status = None;
     state.cloud.trusted_total_xp = None;
     state.cloud.trusted_level = None;
     state.cloud.trusted_stage = None;

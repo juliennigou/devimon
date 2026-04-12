@@ -1,5 +1,5 @@
 use crate::monster::Stage;
-use crate::save::{AccountSession, SaveFile};
+use crate::save::{AccountSession, CloudVerificationStatus, SaveFile};
 use chrono::{DateTime, Utc};
 use reqwest::StatusCode;
 use reqwest::blocking::{Client, Response};
@@ -72,6 +72,7 @@ struct ProfileSnapshot {
     hunger: f32,
     energy: f32,
     mood: f32,
+    total_xp: u32,
     last_active_at: DateTime<Utc>,
 }
 
@@ -80,7 +81,17 @@ pub struct SyncResponse {
     pub monster_id: String,
     pub synced_at: DateTime<Utc>,
     #[serde(default)]
+    pub official_rank: Option<u64>,
+    #[serde(default)]
     pub leaderboard_rank: Option<u64>,
+    #[serde(default)]
+    pub verification_status: Option<CloudVerificationStatus>,
+    #[serde(default)]
+    pub cloud_total_xp: Option<u32>,
+    #[serde(default)]
+    pub cloud_level: Option<u32>,
+    #[serde(default)]
+    pub cloud_stage: Option<Stage>,
     #[serde(default)]
     pub trusted_total_xp: Option<u32>,
     #[serde(default)]
@@ -189,6 +200,7 @@ pub fn sync_state(state: &mut SaveFile) -> Result<SyncResponse, String> {
             hunger: m.hunger,
             energy: m.energy,
             mood: m.mood,
+            total_xp: m.total_xp,
             last_active_at: m.last_active,
         }
     };
@@ -209,10 +221,14 @@ pub fn sync_state(state: &mut SaveFile) -> Result<SyncResponse, String> {
     let sync: SyncResponse = parse_json(response)?;
     state.cloud.monster_id = Some(sync.monster_id.clone());
     state.cloud.last_synced_at = Some(sync.synced_at);
+    state.cloud.cloud_total_xp = sync.cloud_total_xp;
+    state.cloud.cloud_level = sync.cloud_level;
+    state.cloud.cloud_stage = sync.cloud_stage;
+    state.cloud.verification_status = sync.verification_status;
     state.cloud.trusted_total_xp = sync.trusted_total_xp;
     state.cloud.trusted_level = sync.trusted_level;
     state.cloud.trusted_stage = sync.trusted_stage;
-    state.cloud.leaderboard_rank = sync.leaderboard_rank;
+    state.cloud.leaderboard_rank = sync.official_rank.or(sync.leaderboard_rank);
     state.cloud.last_accepted_xp_delta = sync.accepted_xp_delta;
     state.cloud.last_requested_xp_delta = sync.requested_xp_delta;
     state.cloud.last_max_accepted_xp_delta = sync.max_accepted_xp_delta;

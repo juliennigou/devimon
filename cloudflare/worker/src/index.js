@@ -5,6 +5,7 @@ const corsHeaders = {
 };
 
 const ALLOWED_STAGES = new Set(["Baby", "Young", "Evolved"]);
+const ALLOWED_VERIFICATION_STATUSES = new Set(["verified", "unverified"]);
 const MAX_SYNC_LEVEL = 10000;
 const XP_PER_MINUTE_CAP = 10;
 const SYNC_XP_GRACE = 10;
@@ -20,6 +21,23 @@ const RANKED_MONSTER_COLUMNS = [
 const RANKED_MONSTER_INDEX_DDL =
   `CREATE INDEX IF NOT EXISTS idx_monsters_ranked_total_xp
     ON monsters (ranked_total_xp DESC, ranked_level DESC, updated_at DESC)`;
+const VERIFICATION_MONSTER_COLUMNS = [
+  {
+    name: "verification_status",
+    ddl: "ALTER TABLE monsters ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'unverified' CHECK (verification_status IN ('verified', 'unverified'))",
+  },
+  {
+    name: "verified_at",
+    ddl: "ALTER TABLE monsters ADD COLUMN verified_at TEXT",
+  },
+  {
+    name: "verification_reason",
+    ddl: "ALTER TABLE monsters ADD COLUMN verification_reason TEXT",
+  },
+];
+const VERIFICATION_MONSTER_INDEX_DDL =
+  `CREATE INDEX IF NOT EXISTS idx_monsters_verification_status
+    ON monsters (verification_status, updated_at DESC)`;
 
 export default {
   async fetch(request, env) {
@@ -424,6 +442,7 @@ async function handleMe(session, env) {
 
 async function handleSync(request, env, session) {
   await ensureRankedMonsterColumns(env);
+  await ensureVerificationMonsterColumns(env);
   await ensureSuspiciousSyncsTable(env);
 
   const body = await readJson(request);
@@ -446,7 +465,6 @@ async function handleSync(request, env, session) {
       ? body.monster_id.trim()
       : null;
   const rankedXpDelta = Number(body.ranked_xp_delta || 0);
-  const snapshot = validateProfileSnapshot(body.snapshot);
   const syncedAt = nowIso();
 
   await env.DB.prepare(
@@ -461,7 +479,7 @@ async function handleSync(request, env, session) {
     .run();
 
   const existing = await env.DB.prepare(
-    `SELECT monster_id, ranked_total_xp, updated_at
+    `SELECT monster_id, ranked_total_xp, updated_at, verification_status, verified_at
        FROM monsters
       WHERE account_id = ?`
   )
@@ -471,14 +489,25 @@ async function handleSync(request, env, session) {
   // Monster ownership is server-side: client-supplied IDs are ignored here.
   const monsterId = existing?.monster_id || crypto.randomUUID();
   const rankedProgression = computeAcceptedRankedProgression(existing, rankedXpDelta, syncedAt);
+  const snapshot = validateProfileSnapshot(body.snapshot, rankedProgression.totalXp);
+  const displayProgression = progressionFromTotalXp(snapshot.total_xp);
+  const suspiciousFindings = evaluateSuspiciousSync(rankedXpDelta, rankedProgression);
+  const verification = determineVerificationState(
+    existing,
+    displayProgression,
+    rankedProgression,
+    suspiciousFindings,
+    syncedAt
+  );
 
   await env.DB.prepare(
     `INSERT INTO monsters (
         monster_id, account_id, name, level, xp, total_xp, stage,
         ranked_level, ranked_xp, ranked_total_xp, ranked_stage,
+        verification_status, verified_at, verification_reason,
         hunger, energy, mood, last_active_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(account_id)
       DO UPDATE SET
         name = excluded.name,
@@ -490,6 +519,9 @@ async function handleSync(request, env, session) {
         ranked_xp = excluded.ranked_xp,
         ranked_total_xp = excluded.ranked_total_xp,
         ranked_stage = excluded.ranked_stage,
+        verification_status = excluded.verification_status,
+        verified_at = excluded.verified_at,
+        verification_reason = excluded.verification_reason,
         hunger = excluded.hunger,
         energy = excluded.energy,
         mood = excluded.mood,
@@ -500,14 +532,17 @@ async function handleSync(request, env, session) {
       monsterId,
       session.account_id,
       snapshot.name,
+      displayProgression.level,
+      displayProgression.xp,
+      displayProgression.totalXp,
+      displayProgression.stage,
       rankedProgression.level,
       rankedProgression.xp,
       rankedProgression.totalXp,
       rankedProgression.stage,
-      rankedProgression.level,
-      rankedProgression.xp,
-      rankedProgression.totalXp,
-      rankedProgression.stage,
+      verification.status,
+      verification.verifiedAt,
+      verification.reason,
       snapshot.hunger,
       snapshot.energy,
       snapshot.mood,
@@ -542,13 +577,14 @@ async function handleSync(request, env, session) {
         client_monster_id: clientMonsterId,
         resolved_monster_id: canonicalMonster.monster_id,
         ranked_progression: rankedProgression,
+        display_progression: displayProgression,
+        verification,
         ranked_xp_delta: rankedXpDelta,
         snapshot,
       })
     )
     .run();
 
-  const suspiciousFindings = evaluateSuspiciousSync(rankedXpDelta, rankedProgression);
   if (suspiciousFindings.length > 0) {
     await persistSuspiciousSyncs(
       env,
@@ -560,43 +596,57 @@ async function handleSync(request, env, session) {
         client_monster_id: clientMonsterId,
         ranked_xp_delta: rankedXpDelta,
         ranked_progression: rankedProgression,
+        display_progression: displayProgression,
+        verification,
         snapshot,
       },
       syncedAt
     );
   }
 
-  const rankRow = await env.DB.prepare(
-    `SELECT COUNT(*) + 1 AS rank
-       FROM monsters
-      WHERE ranked_total_xp > ?
-         OR (ranked_total_xp = ? AND ranked_level > ?)
-         OR (ranked_total_xp = ? AND ranked_level = ? AND updated_at > ?)`
-  )
-    .bind(
-      rankedProgression.totalXp,
-      rankedProgression.totalXp,
-      rankedProgression.level,
-      rankedProgression.totalXp,
-      rankedProgression.level,
-      syncedAt
+  let officialRank = null;
+  if (verification.status === "verified") {
+    const rankRow = await env.DB.prepare(
+      `SELECT COUNT(*) + 1 AS rank
+         FROM monsters
+        WHERE verification_status = 'verified'
+          AND (
+            ranked_total_xp > ?
+            OR (ranked_total_xp = ? AND ranked_level > ?)
+            OR (ranked_total_xp = ? AND ranked_level = ? AND updated_at > ?)
+          )`
     )
-    .first();
+      .bind(
+        rankedProgression.totalXp,
+        rankedProgression.totalXp,
+        rankedProgression.level,
+        rankedProgression.totalXp,
+        rankedProgression.level,
+        syncedAt
+      )
+      .first();
+    officialRank = rankRow?.rank ? Number(rankRow.rank) : null;
+  }
 
   return json({
     monster_id: canonicalMonster.monster_id,
     synced_at: syncedAt,
-    leaderboard_rank: rankRow?.rank ? Number(rankRow.rank) : null,
-    trusted_total_xp: rankedProgression.totalXp,
-    trusted_level: rankedProgression.level,
-    trusted_stage: rankedProgression.stage,
+    verification_status: verification.status,
+    official_rank: officialRank,
+    leaderboard_rank: officialRank,
+    cloud_total_xp: displayProgression.totalXp,
+    cloud_level: displayProgression.level,
+    cloud_stage: displayProgression.stage,
+    trusted_total_xp: verification.status === "verified" ? rankedProgression.totalXp : null,
+    trusted_level: verification.status === "verified" ? rankedProgression.level : null,
+    trusted_stage: verification.status === "verified" ? rankedProgression.stage : null,
     accepted_xp_delta: rankedProgression.acceptedDelta,
     requested_xp_delta: rankedProgression.requestedDelta,
     max_accepted_xp_delta: rankedProgression.maxAcceptedDelta,
   });
 }
 
-function validateProfileSnapshot(snapshot) {
+function validateProfileSnapshot(snapshot, fallbackTotalXp = 0) {
   const requiredStrings = ["name", "last_active_at"];
   for (const key of requiredStrings) {
     if (typeof snapshot[key] !== "string" || !snapshot[key].trim()) {
@@ -610,9 +660,18 @@ function validateProfileSnapshot(snapshot) {
       throw new HttpError(400, `snapshot.${key} must be a number`);
     }
   }
+  if (
+    snapshot.total_xp !== undefined &&
+    (!Number.isInteger(snapshot.total_xp) ||
+      snapshot.total_xp < 0 ||
+      snapshot.total_xp > totalXpForLevel(MAX_SYNC_LEVEL))
+  ) {
+    throw new HttpError(400, "snapshot.total_xp must be a non-negative integer");
+  }
 
   // Snapshot fields are profile-only and never drive ranked truth.
-  // Ranked progression is derived exclusively from trusted ranked XP evidence.
+  // Snapshot progression is display-only. Ranked progression is derived
+  // exclusively from trusted ranked XP evidence.
   const lastActiveAt = parseIsoTimestamp(snapshot.last_active_at, "snapshot.last_active_at");
 
   return {
@@ -620,6 +679,7 @@ function validateProfileSnapshot(snapshot) {
     hunger: clamp(snapshot.hunger, 0, 100),
     energy: clamp(snapshot.energy, 0, 100),
     mood: clamp(snapshot.mood, 0, 100),
+    total_xp: Number.isInteger(snapshot.total_xp) ? snapshot.total_xp : fallbackTotalXp,
     last_active_at: lastActiveAt,
   };
 }
@@ -671,6 +731,45 @@ function computeAcceptedRankedProgression(existing, requestedXpDelta, syncedAt) 
     acceptedDelta,
     requestedDelta,
     maxAcceptedDelta,
+  };
+}
+
+function determineVerificationState(
+  existing,
+  displayProgression,
+  rankedProgression,
+  suspiciousFindings,
+  syncedAt
+) {
+  const hasSuspiciousFindings = suspiciousFindings.length > 0;
+  const hasTrustedCoverage = displayProgression.totalXp <= rankedProgression.totalXp;
+  const existingStatus = normalizeVerificationStatus(existing?.verification_status);
+  const existingVerifiedAt =
+    typeof existing?.verified_at === "string" && existing.verified_at.trim()
+      ? existing.verified_at
+      : null;
+
+  if (hasSuspiciousFindings) {
+    return {
+      status: "unverified",
+      verifiedAt: null,
+      reason: "suspicious_activity",
+    };
+  }
+
+  if (hasTrustedCoverage) {
+    return {
+      status: "verified",
+      verifiedAt:
+        existingStatus === "verified" && existingVerifiedAt ? existingVerifiedAt : syncedAt,
+      reason: "trusted_sync_history",
+    };
+  }
+
+  return {
+    status: "unverified",
+    verifiedAt: null,
+    reason: "awaiting_trusted_sync_history",
   };
 }
 
@@ -738,38 +837,66 @@ function clamp(value, min, max) {
 
 async function handleLeaderboard(request, env) {
   await ensureRankedMonsterColumns(env);
+  await ensureVerificationMonsterColumns(env);
 
   const url = new URL(request.url);
   const requested = Number(url.searchParams.get("limit") || 20);
   const limit = Number.isFinite(requested)
     ? Math.min(Math.max(Math.floor(requested), 1), 100)
     : 20;
+  const verifiedOnly = ["1", "true", "yes"].includes(
+    (url.searchParams.get("verified_only") || "").trim().toLowerCase()
+  );
 
-  const rows = await env.DB.prepare(
-    `SELECT m.monster_id, m.name, m.ranked_level, m.ranked_total_xp, m.ranked_stage,
+  let sql =
+    `SELECT m.monster_id, m.name, m.level, m.total_xp, m.stage,
+            m.ranked_level, m.ranked_total_xp, m.ranked_stage,
+            m.verification_status, m.verified_at,
             m.updated_at, m.last_active_at, a.username
        FROM monsters m
-       JOIN accounts a ON m.account_id = a.account_id
-      ORDER BY m.ranked_total_xp DESC, m.ranked_level DESC, m.updated_at DESC
-      LIMIT ?`
-  )
-    .bind(limit)
-    .all();
+       JOIN accounts a ON m.account_id = a.account_id`;
+  if (verifiedOnly) {
+    sql += " WHERE m.verification_status = 'verified'";
+  }
+  sql += `
+      ORDER BY
+        CASE WHEN m.verification_status = 'verified' THEN 0 ELSE 1 END ASC,
+        CASE WHEN m.verification_status = 'verified' THEN m.ranked_total_xp ELSE m.total_xp END DESC,
+        CASE WHEN m.verification_status = 'verified' THEN m.ranked_level ELSE m.level END DESC,
+        m.updated_at DESC
+      LIMIT ?`;
 
-  const monsters = (rows.results || []).map((row, index) => ({
-    rank: index + 1,
+  const rows = await env.DB.prepare(sql).bind(limit).all();
+
+  let nextOfficialRank = 1;
+  let verifiedCount = 0;
+  const monsters = (rows.results || []).map((row) => {
+    const verificationStatus = normalizeVerificationStatus(row.verification_status);
+    const officialRank = verificationStatus === "verified" ? nextOfficialRank++ : null;
+    if (verificationStatus === "verified") {
+      verifiedCount += 1;
+    }
+    return {
+      rank: officialRank,
+      official_rank: officialRank,
     monster_id: row.monster_id,
     name: row.name,
     github_username: row.username,
-    level: Number(row.ranked_level),
-    total_xp: Number(row.ranked_total_xp),
-    stage: row.ranked_stage,
+    level: Number(row.level),
+    total_xp: Number(row.total_xp),
+    stage: row.stage,
+    verification_status: verificationStatus,
+    verified_at: row.verified_at,
     updated_at: row.updated_at,
     last_active_at: row.last_active_at,
-  }));
+    };
+  });
 
   return json({
     generated_at: nowIso(),
+    verified_only: verifiedOnly,
+    verified_count: verifiedCount,
+    monster_count: monsters.length,
     monsters,
   });
 }
@@ -856,6 +983,16 @@ function normalizeSeverity(value) {
   throw new HttpError(400, "severity must be one of: warn, high");
 }
 
+function normalizeVerificationStatus(value) {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (ALLOWED_VERIFICATION_STATUSES.has(normalized)) {
+      return normalized;
+    }
+  }
+  return "unverified";
+}
+
 async function ensureRankedMonsterColumns(env) {
   const result = await env.DB.prepare("PRAGMA table_info(monsters)").all();
   const existingColumns = new Set((result.results || []).map((column) => column.name));
@@ -869,6 +1006,21 @@ async function ensureRankedMonsterColumns(env) {
   }
 
   await env.DB.prepare(RANKED_MONSTER_INDEX_DDL).run();
+}
+
+async function ensureVerificationMonsterColumns(env) {
+  const result = await env.DB.prepare("PRAGMA table_info(monsters)").all();
+  const existingColumns = new Set((result.results || []).map((column) => column.name));
+
+  for (const column of VERIFICATION_MONSTER_COLUMNS) {
+    if (existingColumns.has(column.name)) {
+      continue;
+    }
+    await env.DB.prepare(column.ddl).run();
+    existingColumns.add(column.name);
+  }
+
+  await env.DB.prepare(VERIFICATION_MONSTER_INDEX_DDL).run();
 }
 
 async function ensureSuspiciousSyncsTable(env) {
@@ -934,10 +1086,12 @@ async function persistSuspiciousSyncs(
 
 export {
   computeAcceptedRankedProgression,
+  determineVerificationState,
   extractBearerToken,
   evaluateSuspiciousSync,
   maxXpGainSince,
   normalizeSeverity,
+  normalizeVerificationStatus,
   parseSuspiciousSyncQuery,
   progressionFromTotalXp,
   requireAdminToken,

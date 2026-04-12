@@ -167,13 +167,22 @@
                                 </span>
                             </div>
                         </div>
-                        <button
-                            id="refresh-button"
-                            class="btn-terminal"
-                            data-i18n="leaderboard.refresh"
-                        >
-                            [↻ Refresh]
-                        </button>
+                        <div class="leaderboard-controls">
+                            <button
+                                id="verified-filter-button"
+                                class="btn-terminal"
+                                data-i18n="leaderboard.filter.all"
+                            >
+                                [All Entries]
+                            </button>
+                            <button
+                                id="refresh-button"
+                                class="btn-terminal"
+                                data-i18n="leaderboard.refresh"
+                            >
+                                [↻ Refresh]
+                            </button>
+                        </div>
                     </div>
 
                     <div
@@ -182,6 +191,14 @@
                         data-i18n="leaderboard.loading"
                     >
                         Loading leaderboard...
+                    </div>
+
+                    <div class="leaderboard-legend">
+                        <span class="trust-badge trust-verified" data-i18n="trust.verified">Verified</span>
+                        <span class="legend-copy" data-i18n="trust.verified.desc">eligible for official ranking</span>
+                        <span class="legend-sep">│</span>
+                        <span class="trust-badge trust-unverified" data-i18n="trust.unverified">Unverified</span>
+                        <span class="legend-copy" data-i18n="trust.unverified.desc">synced, but not yet verified</span>
                     </div>
 
                     <div class="table-wrap">
@@ -194,6 +211,7 @@
                                     <th data-i18n="table.stage">Stage</th>
                                     <th data-i18n="table.level" class="th-center">LVL</th>
                                     <th data-i18n="table.xp" class="th-xp">XP</th>
+                                    <th data-i18n="table.trust">Trust</th>
                                     <th data-i18n="table.active">Last Active</th>
                                 </tr>
                             </thead>

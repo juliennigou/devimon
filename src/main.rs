@@ -124,10 +124,34 @@ fn print_sync_status(sync: &SyncResponse) {
             .bright_cyan()
             .bold()
     );
-    if let Some(rank) = sync.leaderboard_rank {
+    if let Some(status) = sync.verification_status {
+        println!(
+            "  {}",
+            format!("Cloud verification: {}", status.label()).bright_black()
+        );
+    }
+    if let Some(rank) = sync.official_rank.or(sync.leaderboard_rank) {
         println!(
             "{}",
-            format!("🏆 Current leaderboard rank: #{}", rank).bright_yellow()
+            format!("🏆 Official leaderboard rank: #{}", rank).bright_yellow()
+        );
+    }
+    if let (Some(level), Some(total_xp), Some(stage), Some(status)) = (
+        sync.cloud_level,
+        sync.cloud_total_xp,
+        sync.cloud_stage,
+        sync.verification_status,
+    ) {
+        println!(
+            "  {}",
+            format!(
+                "Cloud progression: lv.{} · {} · {} XP · {}",
+                level,
+                stage.label(),
+                total_xp,
+                status.label()
+            )
+            .bright_black()
         );
     }
     if let (Some(level), Some(total_xp), Some(stage)) = (
@@ -138,7 +162,7 @@ fn print_sync_status(sync: &SyncResponse) {
         println!(
             "  {}",
             format!(
-                "Trusted cloud progression: lv.{} · {} · {} XP",
+                "Verified progression: lv.{} · {} · {} XP",
                 level,
                 stage.label(),
                 total_xp
@@ -239,24 +263,26 @@ fn cmd_status() -> Result<(), String> {
         if let Some(monster_id) = &state.cloud.monster_id {
             println!("  {}", format!("Monster ID: {}", monster_id).bright_black());
         }
-        if let (Some(level), Some(total_xp), Some(stage)) = (
-            state.cloud.trusted_level,
-            state.cloud.trusted_total_xp,
-            state.cloud.trusted_stage,
+        if let (Some(level), Some(total_xp), Some(stage), Some(status)) = (
+            state.cloud.cloud_level,
+            state.cloud.cloud_total_xp,
+            state.cloud.cloud_stage,
+            state.cloud.verification_status,
         ) {
             println!(
                 "  {}",
                 format!(
-                    "Trusted cloud: lv.{} · {} · {} XP",
+                    "Cloud progression: lv.{} · {} · {} XP · {}",
                     level,
                     stage.label(),
-                    total_xp
+                    total_xp,
+                    status.label()
                 )
                 .bright_black()
             );
         }
         if let Some(rank) = state.cloud.leaderboard_rank {
-            println!("  {}", format!("Trusted rank: #{}", rank).bright_black());
+            println!("  {}", format!("Official rank: #{}", rank).bright_black());
         }
         if state.cloud.pending_ranked_xp_delta > 0 {
             println!(
@@ -428,20 +454,22 @@ fn cmd_whoami() -> Result<(), String> {
     if let Some(monster_id) = me.monster_id.or_else(|| state.cloud.monster_id.clone()) {
         println!("  Monster ID: {}", monster_id);
     }
-    if let (Some(level), Some(total_xp), Some(stage)) = (
-        state.cloud.trusted_level,
-        state.cloud.trusted_total_xp,
-        state.cloud.trusted_stage,
+    if let (Some(level), Some(total_xp), Some(stage), Some(status)) = (
+        state.cloud.cloud_level,
+        state.cloud.cloud_total_xp,
+        state.cloud.cloud_stage,
+        state.cloud.verification_status,
     ) {
         println!(
-            "  Trusted Cloud: lv.{} · {} · {} XP",
+            "  Cloud Progression: lv.{} · {} · {} XP · {}",
             level,
             stage.label(),
-            total_xp
+            total_xp,
+            status.label()
         );
     }
     if let Some(rank) = state.cloud.leaderboard_rank {
-        println!("  Trusted Rank: #{}", rank);
+        println!("  Official Rank: #{}", rank);
     }
     if state.cloud.pending_ranked_xp_delta > 0 {
         println!(

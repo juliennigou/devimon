@@ -32,6 +32,9 @@ function stageClass(stage) {
 
 /** Rank decoration for top 3. */
 function rankDisplay(rank) {
+  if (rank == null) {
+    return { text: "—", cls: "rank-unverified" };
+  }
   switch (rank) {
     case 1:
       return { text: "♛ 1", cls: "rank-1" };
@@ -41,6 +44,15 @@ function rankDisplay(rank) {
       return { text: "♗ 3", cls: "rank-3" };
     default:
       return { text: `${rank}`, cls: "" };
+  }
+}
+
+function verificationDisplay(status) {
+  switch ((status || "").toLowerCase()) {
+    case "verified":
+      return { text: "Verified", cls: "trust-verified" };
+    default:
+      return { text: "Unverified", cls: "trust-unverified" };
   }
 }
 
