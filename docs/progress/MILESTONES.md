@@ -107,3 +107,10 @@ Commit:
 Pending next:
 
 - revisit final evolution mood averaging with stronger multi-day semantics
+
+### Milestone 11
+
+- Fixed the D1 deploy/bootstrap path for existing remote databases.
+- Removed ranked index creation from `schema.sql`, which was unsafe against older `monsters` tables.
+- Moved ranked leaderboard index creation into the Worker's lazy runtime migration helper.
+- Updated Cloudflare deployment docs to describe `schema.sql` as bootstrap schema plus runtime backfills.

@@ -88,9 +88,6 @@ CREATE TABLE IF NOT EXISTS suspicious_syncs (
 CREATE INDEX IF NOT EXISTS idx_monsters_total_xp
   ON monsters (total_xp DESC, level DESC, updated_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_monsters_ranked_total_xp
-  ON monsters (ranked_total_xp DESC, ranked_level DESC, updated_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_sessions_account
   ON sessions (account_id);
 

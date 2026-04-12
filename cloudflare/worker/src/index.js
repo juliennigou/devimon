@@ -17,6 +17,9 @@ const RANKED_MONSTER_COLUMNS = [
     ddl: "ALTER TABLE monsters ADD COLUMN ranked_stage TEXT NOT NULL DEFAULT 'Baby' CHECK (ranked_stage IN ('Baby', 'Young', 'Evolved'))",
   },
 ];
+const RANKED_MONSTER_INDEX_DDL =
+  `CREATE INDEX IF NOT EXISTS idx_monsters_ranked_total_xp
+    ON monsters (ranked_total_xp DESC, ranked_level DESC, updated_at DESC)`;
 
 export default {
   async fetch(request, env) {
@@ -864,6 +867,8 @@ async function ensureRankedMonsterColumns(env) {
     await env.DB.prepare(column.ddl).run();
     existingColumns.add(column.name);
   }
+
+  await env.DB.prepare(RANKED_MONSTER_INDEX_DDL).run();
 }
 
 async function ensureSuspiciousSyncsTable(env) {

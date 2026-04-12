@@ -33,6 +33,10 @@ npm install
 npx wrangler d1 execute devimon --file=./schema.sql
 ```
 
+`schema.sql` is the safe bootstrap schema. Ranked leaderboard columns and indexes are also
+backfilled lazily by the Worker at runtime so older D1 databases can upgrade without
+failing on missing-column index creation.
+
 ### Run locally
 
 ```bash

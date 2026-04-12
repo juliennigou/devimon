@@ -192,7 +192,7 @@ GitHub Actions handles everything on push to `main`:
 
 1. `cargo check` + formatting check
 2. Worker dependency install + syntax check
-3. D1 schema migration (`cloudflare/worker/schema.sql`)
+3. D1 bootstrap schema (`cloudflare/worker/schema.sql`)
 4. Cloudflare Worker deploy
 5. Cloudflare Pages deploy
 
@@ -203,7 +203,7 @@ GitHub Actions handles everything on push to `main`:
 | `CLOUDFLARE_API_TOKEN` | Deploy to Cloudflare |
 | `CLOUDFLARE_ACCOUNT_ID` | Target account |
 
-The GitHub OAuth secrets (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`) live in the Cloudflare Worker environment directly and do not need to be in GitHub Actions.
+The GitHub OAuth secrets (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`) live in the Cloudflare Worker environment directly and do not need to be in GitHub Actions. Ranked leaderboard columns and indexes are backfilled lazily by the Worker so older D1 databases can upgrade cleanly from the bootstrap schema.
 
 **Releases** are triggered by pushing a version tag:
 
