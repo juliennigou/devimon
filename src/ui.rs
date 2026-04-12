@@ -227,7 +227,11 @@ fn check_for_update_bg(result: Arc<Mutex<Option<String>>>) {
             .ok()
             .filter(|r| r.status().is_success())
             .and_then(|r| r.json::<serde_json::Value>().ok())
-            .and_then(|j| j["tag_name"].as_str().map(|s| s.trim_start_matches('v').to_string()));
+            .and_then(|j| {
+                j["tag_name"]
+                    .as_str()
+                    .map(|s| s.trim_start_matches('v').to_string())
+            });
         if let Some(latest) = tag {
             if latest != current {
                 if let Ok(mut guard) = result.lock() {
@@ -1584,35 +1588,23 @@ fn draw_home(
             "⬆"
         };
         let banner = Line::from(vec![
-            Span::styled(
-                format!(" {} ", pulse),
-                Style::default().fg(Color::Yellow),
-            ),
+            Span::styled(format!(" {} ", pulse), Style::default().fg(Color::Yellow)),
             Span::styled(
                 format!("Update available: v{} → v{}", current, latest),
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                "  —  run ",
-                Style::default().fg(Color::DarkGray),
-            ),
+            Span::styled("  —  run ", Style::default().fg(Color::DarkGray)),
             Span::styled(
                 "devimon update",
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                " to upgrade",
-                Style::default().fg(Color::DarkGray),
-            ),
+            Span::styled(" to upgrade", Style::default().fg(Color::DarkGray)),
         ]);
-        f.render_widget(
-            Paragraph::new(banner).alignment(Alignment::Center),
-            rows[1],
-        );
+        f.render_widget(Paragraph::new(banner).alignment(Alignment::Center), rows[1]);
     }
 
     draw_footer(f, rows[2], state);
