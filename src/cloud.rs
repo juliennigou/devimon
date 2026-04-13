@@ -232,11 +232,9 @@ pub fn sync_state(state: &mut SaveFile) -> Result<SyncResponse, String> {
     state.cloud.last_accepted_xp_delta = sync.accepted_xp_delta;
     state.cloud.last_requested_xp_delta = sync.requested_xp_delta;
     state.cloud.last_max_accepted_xp_delta = sync.max_accepted_xp_delta;
-    if let Some(accepted) = sync.accepted_xp_delta {
-        state.cloud.pending_ranked_xp_delta =
-            state.cloud.pending_ranked_xp_delta.saturating_sub(accepted);
-    }
-    state.cloud.sync_dirty = state.cloud.pending_ranked_xp_delta > 0;
+    // The server accepted what it trusts; drop the entire pending delta.
+    state.cloud.pending_ranked_xp_delta = 0;
+    state.cloud.sync_dirty = false;
     Ok(sync)
 }
 

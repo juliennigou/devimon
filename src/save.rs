@@ -356,8 +356,8 @@ pub fn clear_session(state: &mut SaveFile) {
     state.cloud.last_accepted_xp_delta = None;
     state.cloud.last_requested_xp_delta = None;
     state.cloud.last_max_accepted_xp_delta = None;
-    state.cloud.pending_ranked_xp_delta = 0;
-    state.cloud.sync_dirty = false;
+    // Preserve pending_ranked_xp_delta so unsent XP survives disconnect/reconnect.
+    state.cloud.sync_dirty = state.cloud.pending_ranked_xp_delta > 0;
 }
 
 #[cfg(test)]

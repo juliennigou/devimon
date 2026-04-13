@@ -1791,7 +1791,8 @@ fn draw_footer(f: &mut ratatui::Frame, area: Rect, state: &SaveFile) {
             .verification_status
             .map(|status| format!(" · {}", status.label()))
             .unwrap_or_default();
-        let trusted = match (state.cloud.leaderboard_rank, state.cloud.cloud_level) {
+        let display_level = state.cloud.trusted_level.or(state.cloud.cloud_level);
+        let trusted = match (state.cloud.leaderboard_rank, display_level) {
             (Some(rank), Some(level)) => format!(
                 " · official rank #{} · cloud lv.{}{}",
                 rank, level, verification

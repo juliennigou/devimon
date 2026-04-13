@@ -488,7 +488,8 @@ async function handleSync(request, env, session) {
 
   // Monster ownership is server-side: client-supplied IDs are ignored here.
   const monsterId = existing?.monster_id || crypto.randomUUID();
-  const rankedProgression = computeAcceptedRankedProgression(existing, rankedXpDelta, syncedAt);
+  const clientTotalXp = Number.isInteger(body.snapshot?.total_xp) ? body.snapshot.total_xp : 0;
+  const rankedProgression = computeAcceptedRankedProgression(existing, rankedXpDelta, syncedAt, clientTotalXp);
   const snapshot = validateProfileSnapshot(body.snapshot, rankedProgression.totalXp);
   const displayProgression = progressionFromTotalXp(snapshot.total_xp);
   const suspiciousFindings = evaluateSuspiciousSync(rankedXpDelta, rankedProgression);
@@ -719,10 +720,22 @@ function progressionFromTotalXp(totalXp) {
   };
 }
 
-function computeAcceptedRankedProgression(existing, requestedXpDelta, syncedAt) {
-  const previousTotalXp = Number(existing?.ranked_total_xp || 0);
+function computeAcceptedRankedProgression(existing, requestedXpDelta, syncedAt, clientTotalXp) {
+  // First sync for this account: seed ranked XP from the client's local total
+  // so the user starts verified instead of being penalised for connecting.
+  if (!existing) {
+    const seededTotalXp = Math.max(0, clientTotalXp || 0);
+    return {
+      ...progressionFromTotalXp(seededTotalXp),
+      acceptedDelta: 0,
+      requestedDelta: Math.max(0, requestedXpDelta),
+      maxAcceptedDelta: 0,
+    };
+  }
+
+  const previousTotalXp = Number(existing.ranked_total_xp || 0);
   const requestedDelta = Math.max(0, requestedXpDelta);
-  const maxAcceptedDelta = maxXpGainSince(existing?.updated_at, syncedAt);
+  const maxAcceptedDelta = maxXpGainSince(existing.updated_at, syncedAt);
   const acceptedDelta = Math.min(requestedDelta, maxAcceptedDelta);
   const trustedTotalXp = previousTotalXp + acceptedDelta;
 

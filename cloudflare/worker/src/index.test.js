@@ -15,9 +15,18 @@ import {
   validateProfileSnapshot,
 } from "./index.js";
 
-test("first sync starts ranked progression at zero", () => {
+test("first sync seeds ranked progression from client total xp", () => {
   const syncedAt = "2026-04-11T22:00:00.000Z";
-  const progression = computeAcceptedRankedProgression(null, 500, syncedAt);
+  const progression = computeAcceptedRankedProgression(null, 500, syncedAt, 250);
+
+  assert.equal(progression.totalXp, 250);
+  assert.equal(progression.acceptedDelta, 0);
+  assert.equal(progression.requestedDelta, 500);
+});
+
+test("first sync with zero client xp starts at zero", () => {
+  const syncedAt = "2026-04-11T22:00:00.000Z";
+  const progression = computeAcceptedRankedProgression(null, 0, syncedAt, 0);
 
   assert.equal(progression.totalXp, 0);
   assert.equal(progression.level, 1);
