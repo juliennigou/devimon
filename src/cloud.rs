@@ -93,12 +93,6 @@ pub struct SyncResponse {
     #[serde(default)]
     pub cloud_stage: Option<Stage>,
     #[serde(default)]
-    pub trusted_total_xp: Option<u32>,
-    #[serde(default)]
-    pub trusted_level: Option<u32>,
-    #[serde(default)]
-    pub trusted_stage: Option<Stage>,
-    #[serde(default)]
     pub accepted_xp_delta: Option<u32>,
     #[serde(default)]
     pub requested_xp_delta: Option<u32>,
@@ -225,16 +219,15 @@ pub fn sync_state(state: &mut SaveFile) -> Result<SyncResponse, String> {
     state.cloud.cloud_level = sync.cloud_level;
     state.cloud.cloud_stage = sync.cloud_stage;
     state.cloud.verification_status = sync.verification_status;
-    state.cloud.trusted_total_xp = sync.trusted_total_xp;
-    state.cloud.trusted_level = sync.trusted_level;
-    state.cloud.trusted_stage = sync.trusted_stage;
     state.cloud.leaderboard_rank = sync.official_rank.or(sync.leaderboard_rank);
     state.cloud.last_accepted_xp_delta = sync.accepted_xp_delta;
     state.cloud.last_requested_xp_delta = sync.requested_xp_delta;
     state.cloud.last_max_accepted_xp_delta = sync.max_accepted_xp_delta;
-    // The server accepted what it trusts; drop the entire pending delta.
-    state.cloud.pending_ranked_xp_delta = 0;
-    state.cloud.sync_dirty = false;
+    // Only subtract the XP the server actually accepted; keep the rest pending.
+    let accepted = sync.accepted_xp_delta.unwrap_or(0);
+    state.cloud.pending_ranked_xp_delta =
+        state.cloud.pending_ranked_xp_delta.saturating_sub(accepted);
+    state.cloud.sync_dirty = state.cloud.pending_ranked_xp_delta > 0;
     Ok(sync)
 }
 

@@ -136,36 +136,18 @@ fn print_sync_status(sync: &SyncResponse) {
             format!("🏆 Official leaderboard rank: #{}", rank).bright_yellow()
         );
     }
-    if let (Some(level), Some(total_xp), Some(stage), Some(status)) = (
+    if let (Some(level), Some(total_xp), Some(stage)) = (
         sync.cloud_level,
         sync.cloud_total_xp,
         sync.cloud_stage,
-        sync.verification_status,
     ) {
         println!(
             "  {}",
             format!(
-                "Cloud progression: lv.{} · {} · {} XP · {}",
+                "Cloud progression: lv.{} · {} · {} XP",
                 level,
                 stage.label(),
                 total_xp,
-                status.label()
-            )
-            .bright_black()
-        );
-    }
-    if let (Some(level), Some(total_xp), Some(stage)) = (
-        sync.trusted_level,
-        sync.trusted_total_xp,
-        sync.trusted_stage,
-    ) {
-        println!(
-            "  {}",
-            format!(
-                "Verified progression: lv.{} · {} · {} XP",
-                level,
-                stage.label(),
-                total_xp
             )
             .bright_black()
         );
@@ -263,20 +245,18 @@ fn cmd_status() -> Result<(), String> {
         if let Some(monster_id) = &state.cloud.monster_id {
             println!("  {}", format!("Monster ID: {}", monster_id).bright_black());
         }
-        if let (Some(level), Some(total_xp), Some(stage), Some(status)) = (
+        if let (Some(level), Some(total_xp), Some(stage)) = (
             state.cloud.cloud_level,
             state.cloud.cloud_total_xp,
             state.cloud.cloud_stage,
-            state.cloud.verification_status,
         ) {
             println!(
                 "  {}",
                 format!(
-                    "Cloud progression: lv.{} · {} · {} XP · {}",
+                    "Cloud progression: lv.{} · {} · {} XP",
                     level,
                     stage.label(),
                     total_xp,
-                    status.label()
                 )
                 .bright_black()
             );
@@ -288,26 +268,11 @@ fn cmd_status() -> Result<(), String> {
             println!(
                 "  {}",
                 format!(
-                    "Pending ranked coding XP waiting for sync: +{}",
+                    "Pending XP waiting for sync: +{}",
                     state.cloud.pending_ranked_xp_delta
                 )
                 .bright_black()
             );
-        }
-        if let (Some(requested), Some(accepted)) = (
-            state.cloud.last_requested_xp_delta,
-            state.cloud.last_accepted_xp_delta,
-        ) {
-            if requested > accepted {
-                println!(
-                    "  {}",
-                    format!(
-                        "Last sync was capped: local +{} XP, trusted +{}",
-                        requested, accepted
-                    )
-                    .yellow()
-                );
-            }
         }
     }
     println!();
@@ -454,18 +419,16 @@ fn cmd_whoami() -> Result<(), String> {
     if let Some(monster_id) = me.monster_id.or_else(|| state.cloud.monster_id.clone()) {
         println!("  Monster ID: {}", monster_id);
     }
-    if let (Some(level), Some(total_xp), Some(stage), Some(status)) = (
+    if let (Some(level), Some(total_xp), Some(stage)) = (
         state.cloud.cloud_level,
         state.cloud.cloud_total_xp,
         state.cloud.cloud_stage,
-        state.cloud.verification_status,
     ) {
         println!(
-            "  Cloud Progression: lv.{} · {} · {} XP · {}",
+            "  Cloud Progression: lv.{} · {} · {} XP",
             level,
             stage.label(),
             total_xp,
-            status.label()
         );
     }
     if let Some(rank) = state.cloud.leaderboard_rank {
@@ -473,20 +436,9 @@ fn cmd_whoami() -> Result<(), String> {
     }
     if state.cloud.pending_ranked_xp_delta > 0 {
         println!(
-            "  Pending Ranked Coding XP: +{}",
+            "  Pending XP: +{}",
             state.cloud.pending_ranked_xp_delta
         );
-    }
-    if let (Some(requested), Some(accepted)) = (
-        state.cloud.last_requested_xp_delta,
-        state.cloud.last_accepted_xp_delta,
-    ) {
-        if requested > accepted {
-            println!(
-                "  Last Sync Cap: requested +{} XP, accepted +{} XP",
-                requested, accepted
-            );
-        }
     }
     Ok(())
 }

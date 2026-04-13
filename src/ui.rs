@@ -1165,44 +1165,19 @@ fn maybe_sync(
 }
 
 fn sync_flash_message(sync: &cloud::SyncResponse) -> String {
-    let status_suffix = sync
-        .verification_status
-        .map(|status| format!(" · {}", status.label()))
-        .unwrap_or_default();
-    let message = match sync.leaderboard_rank {
-        Some(rank) => match (sync.cloud_level, sync.accepted_xp_delta) {
-            (Some(level), Some(accepted)) => {
-                format!(
-                    "☁️ Sync ok — rank #{} · cloud lv.{}{} · +{} XP",
-                    rank, level, status_suffix, accepted
-                )
-            }
-            (Some(level), None) => {
-                format!(
-                    "☁️ Sync ok — rank #{} · cloud lv.{}{}",
-                    rank, level, status_suffix
-                )
-            }
-            (None, Some(accepted)) => {
-                format!(
-                    "☁️ Sync ok — rank #{}{} · +{} XP",
-                    rank, status_suffix, accepted
-                )
-            }
-            (None, None) => format!("☁️ Sync ok — rank #{}{}", rank, status_suffix),
-        },
-        None => match (sync.cloud_level, sync.accepted_xp_delta) {
-            (Some(level), Some(accepted)) => {
-                format!(
-                    "☁️ Sync ok — cloud lv.{}{} · +{} XP",
-                    level, status_suffix, accepted
-                )
-            }
-            (Some(level), None) => format!("☁️ Sync ok — cloud lv.{}{}", level, status_suffix),
-            (None, Some(accepted)) => format!("☁️ Sync ok{} · +{} XP", status_suffix, accepted),
-            (None, None) => format!("☁️ Sync ok{}", status_suffix),
-        },
-    };
+    let mut parts = vec!["☁️ Sync ok".to_string()];
+
+    if let Some(rank) = sync.leaderboard_rank {
+        parts.push(format!("rank #{}", rank));
+    }
+    if let Some(level) = sync.cloud_level {
+        parts.push(format!("cloud lv.{}", level));
+    }
+    if let Some(accepted) = sync.accepted_xp_delta {
+        parts.push(format!("+{} XP", accepted));
+    }
+
+    let message = parts.join(" · ");
 
     match (sync.requested_xp_delta, sync.accepted_xp_delta) {
         (Some(requested), Some(accepted)) if requested > accepted => {
@@ -1791,10 +1766,9 @@ fn draw_footer(f: &mut ratatui::Frame, area: Rect, state: &SaveFile) {
             .verification_status
             .map(|status| format!(" · {}", status.label()))
             .unwrap_or_default();
-        let display_level = state.cloud.trusted_level.or(state.cloud.cloud_level);
-        let trusted = match (state.cloud.leaderboard_rank, display_level) {
+        let trusted = match (state.cloud.leaderboard_rank, state.cloud.cloud_level) {
             (Some(rank), Some(level)) => format!(
-                " · official rank #{} · cloud lv.{}{}",
+                " · rank #{} · cloud lv.{}{}",
                 rank, level, verification
             ),
             (Some(rank), None) => format!(" · official rank #{}{}", rank, verification),
@@ -2331,24 +2305,21 @@ fn draw_settings(
                     state.cloud.cloud_level,
                     state.cloud.cloud_total_xp,
                     state.cloud.cloud_stage,
-                    state.cloud.verification_status,
                 ) {
-                    (Some(rank), Some(level), Some(total_xp), Some(stage), Some(status)) => {
+                    (Some(rank), Some(level), Some(total_xp), Some(stage)) => {
                         format!(
-                            "Official rank  #{}  ·  lv.{} {}  ·  {} XP  ·  {}",
+                            "Rank #{}  ·  lv.{} {}  ·  {} XP",
                             rank,
                             level,
                             stage.label(),
                             total_xp,
-                            status.label()
                         )
                     }
-                    (_, Some(level), Some(total_xp), Some(stage), Some(status)) => format!(
-                        "Cloud progression  lv.{} {}  ·  {} XP  ·  {}",
+                    (_, Some(level), Some(total_xp), Some(stage)) => format!(
+                        "Cloud progression  lv.{} {}  ·  {} XP",
                         level,
                         stage.label(),
                         total_xp,
-                        status.label()
                     ),
                     _ => "Cloud progression  waiting for first sync".to_string(),
                 },

@@ -48,12 +48,6 @@ pub struct CloudState {
     #[serde(default)]
     pub verification_status: Option<CloudVerificationStatus>,
     #[serde(default)]
-    pub trusted_total_xp: Option<u32>,
-    #[serde(default)]
-    pub trusted_level: Option<u32>,
-    #[serde(default)]
-    pub trusted_stage: Option<Stage>,
-    #[serde(default)]
     pub leaderboard_rank: Option<u64>,
     #[serde(default)]
     pub last_accepted_xp_delta: Option<u32>,
@@ -78,9 +72,6 @@ impl Default for CloudState {
             cloud_level: None,
             cloud_stage: None,
             verification_status: None,
-            trusted_total_xp: None,
-            trusted_level: None,
-            trusted_stage: None,
             leaderboard_rank: None,
             last_accepted_xp_delta: None,
             last_requested_xp_delta: None,
@@ -293,16 +284,6 @@ fn normalize(mut state: SaveFile) -> SaveFile {
         state.cloud.device_id = new_device_id();
     }
 
-    if state.cloud.cloud_total_xp.is_none() {
-        state.cloud.cloud_total_xp = state.cloud.trusted_total_xp;
-    }
-    if state.cloud.cloud_level.is_none() {
-        state.cloud.cloud_level = state.cloud.trusted_level;
-    }
-    if state.cloud.cloud_stage.is_none() {
-        state.cloud.cloud_stage = state.cloud.trusted_stage;
-    }
-
     if state.games.dino.best_time_ms > 0 {
         state.games.dino.record_unlock_claimed = true;
     }
@@ -349,9 +330,6 @@ pub fn clear_session(state: &mut SaveFile) {
     state.cloud.cloud_level = None;
     state.cloud.cloud_stage = None;
     state.cloud.verification_status = None;
-    state.cloud.trusted_total_xp = None;
-    state.cloud.trusted_level = None;
-    state.cloud.trusted_stage = None;
     state.cloud.leaderboard_rank = None;
     state.cloud.last_accepted_xp_delta = None;
     state.cloud.last_requested_xp_delta = None;
