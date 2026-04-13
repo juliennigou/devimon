@@ -3,6 +3,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, content-type",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
+const GITHUB_REPO = "juliennigou/devimon";
+const RELEASE_VERSION_CACHE_TTL_SECONDS = 300;
 
 const ALLOWED_STAGES = new Set(["Baby", "Young", "Evolved"]);
 const ALLOWED_VERIFICATION_STATUSES = new Set(["verified", "unverified"]);
@@ -76,6 +78,10 @@ export default {
         return await handleLeaderboard(request, env);
       }
 
+      if (pathname === "/api/version" && request.method === "GET") {
+        return await handleVersion(request);
+      }
+
       if (pathname === "/api/admin/suspicious-syncs" && request.method === "GET") {
         requireAdminToken(request, env);
         return await handleAdminSuspiciousSyncs(request, env);
@@ -99,12 +105,13 @@ class HttpError extends Error {
   }
 }
 
-function json(data, status = 200) {
+function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
       ...corsHeaders,
+      ...extraHeaders,
     },
   });
 }
@@ -891,6 +898,53 @@ async function handleLeaderboard(request, env) {
   });
 }
 
+async function handleVersion(request) {
+  const cache = caches.default;
+  const cacheKey = new Request(new URL("/api/version", request.url).toString(), {
+    method: "GET",
+  });
+  const cached = await cache.match(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const version = await fetchLatestReleaseTag();
+  const response = json(
+    {
+      version,
+      source: "github_release",
+      fetched_at: nowIso(),
+    },
+    200,
+    {
+      "Cache-Control": `public, max-age=${RELEASE_VERSION_CACHE_TTL_SECONDS}`,
+    }
+  );
+  await cache.put(cacheKey, response.clone());
+  return response;
+}
+
+async function fetchLatestReleaseTag(fetchImpl = fetch) {
+  const response = await fetchImpl(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      "User-Agent": "devimon-worker",
+    },
+  });
+
+  if (!response.ok) {
+    throw new HttpError(502, `failed to fetch latest release: HTTP ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const tag = typeof payload?.tag_name === "string" ? payload.tag_name.trim() : "";
+  if (!tag) {
+    throw new HttpError(502, "latest release is missing tag_name");
+  }
+
+  return tag;
+}
+
 async function handleAdminSuspiciousSyncs(request, env) {
   await ensureSuspiciousSyncsTable(env);
 
@@ -1079,6 +1133,7 @@ export {
   determineVerificationState,
   extractBearerToken,
   evaluateSuspiciousSync,
+  fetchLatestReleaseTag,
   maxXpGainSince,
   normalizeSeverity,
   normalizeVerificationStatus,

@@ -14,6 +14,7 @@ const verifiedFilterButton = document.querySelector("#verified-filter-button");
 const statusBanner = document.querySelector("#status-banner");
 const tbody = document.querySelector("#leaderboard-body");
 const ghStarsEl = document.querySelector("#gh-stars");
+const navVersionEl = document.querySelector(".nav-version");
 const playerCountEl = document.querySelector("#player-count");
 const monsterCountEl = document.querySelector("#monster-count");
 const terminalBody = document.querySelector("#onboarding-terminal");
@@ -22,6 +23,7 @@ const installHintEl = document.querySelector("#install-hint");
 const installOsLabelEl = document.querySelector("#install-os-label");
 const installCopyButton = document.querySelector("#install-copy-button");
 const installModeButtons = document.querySelectorAll("[data-install-mode]");
+let latestReleaseVersion = navVersionEl?.textContent?.trim() || "v0.1.13";
 
 if (apiBaseDisplay) apiBaseDisplay.textContent = `${API_BASE}/api`;
 let verifiedOnlyFilter = false;
@@ -33,12 +35,12 @@ const INSTALL_VARIANTS = {
     command:
       "curl -fsSL https://raw.githubusercontent.com/juliennigou/devimon/main/install.sh | bash",
     hintKey: "install.hint.unix",
-    logs: [
+    buildLogs: (version) => [
       "  Detecting platform... macOS / Linux",
-      "  Fetching latest release... v0.1.13",
+      `  Fetching latest release... ${version}`,
       "  Downloading devimon for your platform...",
       "  Installing to /usr/local/bin/devimon",
-      "  Devimon v0.1.13 installed.",
+      `  Devimon ${version} installed.`,
     ],
   },
   windows: {
@@ -47,12 +49,12 @@ const INSTALL_VARIANTS = {
     command:
       "irm https://raw.githubusercontent.com/juliennigou/devimon/main/install.ps1 | iex",
     hintKey: "install.hint.windows",
-    logs: [
+    buildLogs: (version) => [
       "  Detecting platform... Windows",
-      "  Fetching latest release... v0.1.13",
+      `  Fetching latest release... ${version}`,
       "  Downloading devimon-windows-x86_64.exe...",
       "  Installing to %USERPROFILE%\\.devimon\\bin\\devimon.exe",
-      "  Devimon v0.1.13 installed.",
+      `  Devimon ${version} installed.`,
     ],
   },
 };
@@ -342,6 +344,23 @@ async function loadGitHubStars() {
   }
 }
 
+async function loadReleaseVersion() {
+  try {
+    const res = await fetch(`${API_BASE}/api/version`);
+    if (!res.ok) return;
+
+    const data = await res.json();
+    if (typeof data.version !== "string" || !data.version.trim()) return;
+
+    latestReleaseVersion = data.version.trim();
+    if (navVersionEl) {
+      navVersionEl.textContent = latestReleaseVersion;
+    }
+  } catch {
+    // Version display can safely fall back to the baked-in text.
+  }
+}
+
 // ── Smooth scroll for nav links ─────────────────────────────────────────
 document.querySelectorAll('.nav-link[href^="#"]').forEach((link) => {
   link.addEventListener("click", () => {
@@ -356,12 +375,13 @@ document.querySelectorAll('.nav-link[href^="#"]').forEach((link) => {
 // Runs once: install → spawn → launch TUI → monster escapes into the page
 function buildOnboardScript() {
   const config = getInstallVariantConfig();
+  const logs = config.buildLogs(latestReleaseVersion);
   return [
     {
       type: "cmd",
       text: config.command,
     },
-    ...config.logs.map((text, index) => ({
+    ...logs.map((text, index) => ({
       type: "log",
       text,
       cls: index >= 3 ? "log-line log-ok" : "log-line",
@@ -544,4 +564,6 @@ function launchWanderingMonster() {
 updateVerifiedFilterButton();
 loadLeaderboard();
 loadGitHubStars();
-restartOnboarding();
+loadReleaseVersion().finally(() => {
+  restartOnboarding();
+});
