@@ -136,11 +136,9 @@ fn print_sync_status(sync: &SyncResponse) {
             format!("🏆 Official leaderboard rank: #{}", rank).bright_yellow()
         );
     }
-    if let (Some(level), Some(total_xp), Some(stage)) = (
-        sync.cloud_level,
-        sync.cloud_total_xp,
-        sync.cloud_stage,
-    ) {
+    if let (Some(level), Some(total_xp), Some(stage)) =
+        (sync.cloud_level, sync.cloud_total_xp, sync.cloud_stage)
+    {
         println!(
             "  {}",
             format!(
@@ -435,10 +433,7 @@ fn cmd_whoami() -> Result<(), String> {
         println!("  Official Rank: #{}", rank);
     }
     if state.cloud.pending_ranked_xp_delta > 0 {
-        println!(
-            "  Pending XP: +{}",
-            state.cloud.pending_ranked_xp_delta
-        );
+        println!("  Pending XP: +{}", state.cloud.pending_ranked_xp_delta);
     }
     Ok(())
 }
